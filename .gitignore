@@ -1,8 +1,19 @@
+# macOS
 .DS_Store
+
+# Swift Package Manager
 /.build
 /Packages
-xcuserdata/
+.swiftpm/
+
+# Xcode (in case you ever generate a project)
 DerivedData/
-.swiftpm/configuration/registries.json
-.swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
+/*.xcodeproj/*
+!/*.xcodeproj/project.pbxproj
+!/*.xcodeproj/xcshareddata/
+
+# Xcode user data
+xcuserdata/
+
+# Credentials (if you ever put something here)
 .netrc
