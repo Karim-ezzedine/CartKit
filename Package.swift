@@ -57,8 +57,6 @@ let package = Package(
             dependencies: [
                 "MultiCartCore"
             ]
-            // SwiftData-specific types in this target
-            // will be guarded with @available(iOS 17, *) later.
         ),
 
         // MARK: - Testing Support
