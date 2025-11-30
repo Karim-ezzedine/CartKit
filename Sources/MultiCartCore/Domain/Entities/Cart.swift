@@ -1,13 +1,5 @@
 import Foundation
 
-/// High-level state of a cart.
-public enum CartStatus: String, Hashable, Codable, Sendable {
-    case active
-    case checkedOut
-    case cancelled
-    case expired
-}
-
 /// Represents a cart for a given store, optionally scoped to a user profile.
 ///
 /// Guest carts are represented by `profileID == nil`.
