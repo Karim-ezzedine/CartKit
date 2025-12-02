@@ -4,7 +4,6 @@ import Foundation
 ///
 /// Responsibilities:
 /// - Enforce "one active cart per (storeID, profileID?)" at the API level
-///   (we'll refine invariants as we go).
 /// - Orchestrate domain services (validation, promotions, pricing, conflicts).
 /// - Persist changes via CartStore and emit analytics events.
 ///
