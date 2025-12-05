@@ -14,7 +14,7 @@ jobs:
     # Simple matrix so we can easily expand later
     strategy:
       matrix:
-        xcode: [ "16.0" ]
+        xcode: [ "16.2" ]
       fail-fast: false
 
     steps:
