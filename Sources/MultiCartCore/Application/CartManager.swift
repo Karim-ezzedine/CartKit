@@ -24,12 +24,8 @@ public actor CartManager {
     // MARK: - Cart lifecycle
     
     /// Creates a new cart for the given store + optional profile.
-    ///
-    /// This does *not* automatically deactivate other carts yet; callers
-    /// can either rely on `setActiveCart` or we can refine that behavior
-    /// in later milestones.
     @discardableResult
-    public func createCart(
+    private func createCart(
         storeID: StoreID,
         profileID: UserProfileID? = nil,
         displayName: String? = nil,
