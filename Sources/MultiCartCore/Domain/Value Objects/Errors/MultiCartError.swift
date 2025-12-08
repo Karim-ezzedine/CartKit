@@ -1,5 +1,3 @@
-import Foundation
-
 /// High-level error type used by MultiCart core.
 public enum MultiCartError: Error, Equatable, Sendable {
     case validationFailed(reason: String)

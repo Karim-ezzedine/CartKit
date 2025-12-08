@@ -22,10 +22,6 @@ public struct CartPricingContext: Hashable, Codable, Sendable {
     /// Example: 0.11 = 11% VAT.
     public let taxRate: Decimal
     
-    /// Extra cart-level discount (e.g. promo code).
-    /// Positive amount means “subtract this from the total”.
-    public let manualDiscount: Money?
-    
     public init(
         storeID: StoreID,
         profileID: UserProfileID? = nil,
@@ -39,7 +35,6 @@ public struct CartPricingContext: Hashable, Codable, Sendable {
         self.serviceFee = serviceFee
         self.deliveryFee = deliveryFee
         self.taxRate = taxRate
-        self.manualDiscount = manualDiscount
     }
     
     /// Convenience for “no extra fees / tax / discount”.

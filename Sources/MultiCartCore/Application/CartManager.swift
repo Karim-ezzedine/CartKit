@@ -91,7 +91,7 @@ public actor CartManager {
         return carts.first
     }
     
-    /// Updates the status of a cart, enforcing basic lifecycle rules.
+    /// Updates the status of a cart, enforcing lifecycle and validation rules.
     ///
     /// Allowed transitions:
     /// - `.active` → `.checkedOut`, `.cancelled`, `.expired`
@@ -101,11 +101,9 @@ public actor CartManager {
     /// cannot be changed again. This rule applies equally to guest and
     /// logged-in carts.
     ///
-    /// - Parameter cartID: Identifier of the cart to update.
-    /// - Parameter newStatus: The desired new status.
-    /// - Returns: The updated cart after persistence and analytics.
-    /// - Throws: `MultiCartError.conflict` if the cart is missing or the
-    ///           transition is not allowed.
+    /// When transitioning to `.checkedOut`, the cart is first validated via
+    /// the configured `CartValidationEngine.validate(cart:)`. If validation
+    /// fails, a `MultiCartError.validationFailed` is thrown.
     @discardableResult
     public func updateStatus(
         for cartID: CartID,
@@ -119,6 +117,17 @@ public actor CartManager {
         // If nothing changes, short-circuit.
         if oldStatus == newStatus {
             return cart
+        }
+        
+        // If we're checking out, enforce full-cart validation first.
+        if newStatus == .checkedOut {
+            let result = await config.validationEngine.validate(cart: cart)
+            switch result {
+            case .valid:
+                break
+            case .invalid(let error):
+                throw MultiCartError.validationFailed(reason: error.message)
+            }
         }
         
         cart.status = newStatus
@@ -137,7 +146,7 @@ public actor CartManager {
         
         return updatedCart
     }
-    
+
     /// Updates cart-level metadata (name, context, image, metadata).
     ///
     /// This only operates on active carts; non-active carts will cause a conflict error.
@@ -196,23 +205,23 @@ public actor CartManager {
     
     // MARK: - Pricing
     
-    /// Computes totals for a specific cart ID using the configured pricing engine.
-    ///
-    /// This loads the cart by ID, builds a pricing context if none is provided,
-    /// and delegates the calculation to `CartPricingEngine`.
+    /// Computes totals for a specific cart ID using the configured
+    /// pricing and promotion engines.
     ///
     /// - Parameters:
     ///   - cartID: The identifier of the cart to price.
-    ///   - context: Optional pricing context (fees, tax, discounts, scope).
-    ///              If `nil`, a plain context is built from the cart’s
-    ///              `storeID` and `profileID`.
-    /// - Returns: The `CartTotals` produced by the pricing engine.
+    ///   - context: Optional pricing context (fees, tax, discounts, scope). If `nil`,
+    ///              a plain context is built from the cart’s `storeID` and `profileID`.
+    ///   - promotions: Optional map of promotion kinds to their applied metadata. If non-`nil`,
+    ///                 promotions will be applied on top of the base totals via the `PromotionEngine`.
+    /// - Returns: The final `CartTotals` after pricing and any applied promotions.
     /// - Throws:
     ///   - `MultiCartError.conflict` if the cart does not exist.
-    ///   - Any error thrown by the underlying `CartPricingEngine`.
+    ///   - Any error thrown by the configured `CartPricingEngine` or `PromotionEngine`.
     public func getTotals(
         for cartID: CartID,
-        context: CartPricingContext? = nil
+        context: CartPricingContext? = nil,
+        with promotions: [PromotionKind: AppliedPromotion]? = nil
     ) async throws -> CartTotals {
         guard let cart = try await config.cartStore.loadCart(id: cartID) else {
             throw MultiCartError.conflict(reason: "Cart not found")
@@ -224,25 +233,33 @@ public actor CartManager {
             profileID: cart.profileID
         )
         
-        return try await config.pricingEngine.computeTotals(
+        let cartTotals = try await config.pricingEngine.computeTotals(
             for: cart,
             context: effectiveContext
         )
+        
+        return try await self.applyPromotionsIfAvailable(
+            promotions,
+            to: cartTotals
+        )
     }
     
-    /// Computes totals for the active cart in a given scope.
+    /// Computes totals for the active cart in a given scope using the
+    /// configured pricing and promotion engines.
     ///
-    /// The scope (store + optional profile) is taken from the
-    /// `CartPricingContext`. If no active cart exists for that scope,
-    /// this returns `nil` instead of throwing.
-    ///
-    /// - Parameter context: Pricing context describing the scope
-    ///   (`storeID` / `profileID`) and any fees, tax, or discounts.
-    /// - Returns: `CartTotals` for the active cart in that scope, or `nil`
-    ///            if no active cart exists.
-    /// - Throws: Any error thrown by the underlying `CartPricingEngine`.
+    /// - Parameters:
+    ///   - context: Pricing context describing the scope (`storeID` / `profileID`)
+    ///              and any fees, tax, or discounts.
+    ///   - promotions: Optional map of promotion kinds to their applied metadata.
+    ///                 If non-`nil`, promotions will be applied on top of the base
+    ///                 totals via the `PromotionEngine`.
+    /// - Returns: `CartTotals` for the active cart in that scope (after any promotions),
+    ///            or `nil` if no active cart exists.
+    /// - Throws: Any error thrown by the configured `CartPricingEngine` or
+    ///           `PromotionEngine`.
     public func getTotalsForActiveCart(
-        context: CartPricingContext
+        context: CartPricingContext,
+        with promotions: [PromotionKind: AppliedPromotion]? = nil
     ) async throws -> CartTotals? {
         let cart = try await getActiveCart(
             storeID: context.storeID,
@@ -251,10 +268,62 @@ public actor CartManager {
         
         guard let cart else { return nil }
         
-        return try await config.pricingEngine.computeTotals(
+        let cartTotals = try await config.pricingEngine.computeTotals(
             for: cart,
             context: context
         )
+        
+        return try await self.applyPromotionsIfAvailable(
+            promotions,
+            to: cartTotals
+        )
+    }
+    
+    /// Applies promotions to already-computed cart totals, if any are provided.
+    ///
+    /// This is a small orchestration helper:
+    /// - If `promotions` is `nil`, the input `cartTotals` are returned unchanged.
+    /// - If `promotions` is non-`nil`, the call is delegated to the configured
+    ///   `PromotionEngine.applyPromotions(_:,to:)`.
+    ///
+    /// This keeps `CartManager` responsible for the flow (pricing → promotions)
+    /// while `PromotionEngine` encapsulates the promotion math.
+    ///
+    /// - Parameters:
+    ///   - promotions: Optional map of promotion kinds to applied promotions.
+    ///   - cartTotals: Base totals computed by the `CartPricingEngine`.
+    /// - Returns: Final `CartTotals` after applying promotions, or the original
+    ///            totals when no promotions are provided.
+    /// - Throws: Any error thrown by the configured `PromotionEngine`.
+    public func applyPromotionsIfAvailable(
+        _ promotions: [PromotionKind: AppliedPromotion]? = nil,
+        to cartTotals: CartTotals
+    ) async throws -> CartTotals {
+        if let promotions = promotions {
+            return try await config.promotionEngine.applyPromotions(promotions, to: cartTotals)
+        }
+        else {
+            return cartTotals
+        }
+    }
+    
+    /// Validates the cart before checkout using the configured validation engine.
+    ///
+    /// This does **not** change the cart status; it only reports whether the
+    /// cart satisfies the current rules (min subtotal, max items, etc.).
+    ///
+    /// - Parameter cartID: Identifier of the cart to validate.
+    /// - Returns: `CartValidationResult` describing whether the cart is valid
+    ///            for checkout and, if not, why.
+    /// - Throws: `MultiCartError.conflict` if the cart cannot be loaded.
+    public func validateBeforeCheckout(
+        cartID: CartID
+    ) async throws -> CartValidationResult {
+        guard let cart = try await config.cartStore.loadCart(id: cartID) else {
+            throw MultiCartError.conflict(reason: "Cart not found")
+        }
+        
+        return await config.validationEngine.validate(cart: cart)
     }
     
     // MARK: - Item operations
@@ -394,8 +463,8 @@ public actor CartManager {
         switch result {
         case .valid:
             return
-        case .invalid(let reason):
-            throw MultiCartError.validationFailed(reason: reason)
+        case .invalid(let error):
+            throw MultiCartError.validationFailed(reason: error.message)
         }
     }
     

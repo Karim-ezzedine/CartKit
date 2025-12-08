@@ -1,10 +1,21 @@
 import Foundation
 
-/// Simple default implementation:
-/// - subtotal = sum(unitPrice * quantity)
-/// - tax = subtotal * taxRate
-/// - fees = serviceFee + deliveryFee
-/// - grandTotal = subtotal + tax + fees - manualDiscount
+/// Simple default pricing implementation:
+/// - `subtotal`  = sum of `unitPrice * quantity` for all items.
+/// - `tax`  = `subtotal * taxRate` from the context.
+/// - `deliveryFee` = `context.deliveryFee` (or zero if `nil`).
+/// - `serviceFee`  = `context.serviceFee` (or zero if `nil`).
+/// - `grandTotal`  = `subtotal + deliveryFee + serviceFee + tax`.
+///
+/// The resulting `CartTotals` exposes:
+/// - `subtotal`  (line items),
+/// - `deliveryFee` (delivery-related charges),
+/// - `serviceFee` (service-related charges),
+/// - `tax`,
+/// - `grandTotal` (final payable amount).
+///
+/// This implementation does not interpret promotions; those are applied
+/// separately by `PromotionEngine` on top of these base totals.
 public struct DefaultCartPricingEngine: CartPricingEngine, Sendable {
     
     public init() {}
@@ -18,8 +29,7 @@ public struct DefaultCartPricingEngine: CartPricingEngine, Sendable {
         let currencyCode =
         cart.items.first?.unitPrice.currencyCode ??
         context.serviceFee?.currencyCode ??
-        context.deliveryFee?.currencyCode ??
-        context.manualDiscount?.currencyCode ?? "USD"
+        context.deliveryFee?.currencyCode ?? "USD"
         
         // Subtotal of line items
         var subtotalAmount = Decimal(0)
@@ -36,24 +46,20 @@ public struct DefaultCartPricingEngine: CartPricingEngine, Sendable {
         let feesAmount =
         (context.serviceFee?.amount ?? 0) +
         (context.deliveryFee?.amount ?? 0)
-        
-        let fees = Money(amount: feesAmount, currencyCode: currencyCode)
-        
-        // Discount (cart-level)
-        let discount = context.manualDiscount ?? Money(amount: 0, currencyCode: currencyCode)
-        
+                
         // Grand total
         let grandAmount =
         subtotal.amount +
         tax.amount +
-        fees.amount -
-        discount.amount
+        feesAmount
         
         let grandTotal = Money(amount: grandAmount, currencyCode: currencyCode)
         
         return CartTotals(
             subtotal: subtotal,
-            discount: discount,
+            deliveryFee: context.deliveryFee,
+            serviceFee: context.serviceFee,
+            tax: tax,
             grandTotal: grandTotal
         )
     }

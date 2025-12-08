@@ -1,5 +1,3 @@
-import Foundation
-
 /// Identifies the "scope" of a cart: one store, optionally one profile.
 ///
 /// MultiCart guarantees **at most one active cart per scope**:

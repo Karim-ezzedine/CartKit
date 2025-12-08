@@ -26,6 +26,12 @@ public struct CartItem: Hashable, Codable, Sendable {
     /// Optional image URL representing the item.
     public var imageURL: URL?
 
+    /// Optional per-item stock constraint.
+    ///
+    /// If set, the validation engine can enforce that `quantity <= availableStock`.
+    /// If `nil`, the engine will not enforce a stock limit for this item.
+    public var availableStock: Int?
+    
     // MARK: - Init
 
     public init(
@@ -35,7 +41,8 @@ public struct CartItem: Hashable, Codable, Sendable {
         unitPrice: Money,
         totalPrice: Money? = nil,
         modifiers: [CartItemModifier] = [],
-        imageURL: URL? = nil
+        imageURL: URL? = nil,
+        availableStock: Int? = nil
     ) {
         self.id = id
         self.productID = productID
@@ -43,6 +50,7 @@ public struct CartItem: Hashable, Codable, Sendable {
         self.unitPrice = unitPrice
         self.modifiers = modifiers
         self.imageURL = imageURL
+        self.availableStock = availableStock
 
         if let totalPrice {
             self.totalPrice = totalPrice

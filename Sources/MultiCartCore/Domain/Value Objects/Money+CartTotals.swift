@@ -24,13 +24,12 @@ public struct Money: Hashable, Codable, Sendable {
 /// - `subtotal`   : sum of line items before fees/discounts/tax
 /// - `fees`       : delivery/service fees
 /// - `tax`        : tax/VAT
-/// - `discount`   : total discounts applied (usually positive amount)
 /// - `grandTotal` : final amount charged (subtotal + fees + tax - discount)
 public struct CartTotals: Hashable, Codable, Sendable {
     public var subtotal: Money
-    public var fees: Money
+    public var deliveryFee: Money
+    public var serviceFee: Money
     public var tax: Money
-    public var discount: Money
     public var grandTotal: Money
     
     /// Initializes cart totals.
@@ -39,34 +38,32 @@ public struct CartTotals: Hashable, Codable, Sendable {
     ///   - subtotal: Required base amount.
     ///   - fees: Optional; defaults to zero in the same currency as `subtotal`.
     ///   - tax: Optional; defaults to zero in the same currency as `subtotal`.
-    ///   - discount: Optional; defaults to zero in the same currency as `subtotal`.
     ///   - grandTotal: Optional; if omitted, it is derived as:
     ///                 `subtotal + fees + tax - discount`.
     public init(
         subtotal: Money,
-        fees: Money? = nil,
+        deliveryFee: Money? = nil,
+        serviceFee: Money? = nil,
         tax: Money? = nil,
-        discount: Money? = nil,
         grandTotal: Money? = nil
     ) {
         let currency = subtotal.currencyCode
         
         self.subtotal = subtotal
-        self.fees = fees ?? .zero(currencyCode: currency)
+        self.deliveryFee = deliveryFee ?? .zero(currencyCode: currency)
+        self.serviceFee = serviceFee ?? .zero(currencyCode: currency)
         self.tax = tax ?? .zero(currencyCode: currency)
-        self.discount = discount ?? .zero(currencyCode: currency)
         
         if let grandTotal = grandTotal {
             self.grandTotal = grandTotal
         } else {
             // NOTE: We assume all components share the same currency.
             let totalAmount = self.subtotal.amount
-            + self.fees.amount
+            + self.deliveryFee.amount
+            + self.serviceFee.amount
             + self.tax.amount
-            - self.discount.amount
             
             self.grandTotal = Money(amount: totalAmount, currencyCode: currency)
         }
     }
 }
-
