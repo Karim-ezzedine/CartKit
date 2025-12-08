@@ -56,7 +56,7 @@ public struct Cart: Hashable, Codable, Sendable {
         context: String? = nil,
         storeImageURL: URL? = nil,
         minSubtotal: Money? = nil,
-        maxItemCount: Int? = nil,
+        maxItemCount: Int? = nil
     ) {
         self.id = id
         self.storeID = storeID
