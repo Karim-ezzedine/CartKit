@@ -14,7 +14,7 @@ struct CartManagerDomainTests {
 
         let config = MultiCartConfiguration(
             cartStore: store,
-            conflictResolver: NoOpConflictResolver(),
+            conflictResolver: NoOpConflictResolver()
         )
 
         return CartManager(configuration: config)
