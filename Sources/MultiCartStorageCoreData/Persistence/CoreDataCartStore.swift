@@ -8,9 +8,6 @@ import CoreData
 /// - It loads the `.momd` model from `Bundle.module` (SwiftPM resources).
 /// - It exposes a single `perform(_:)` entry point for running work on a dedicated
 ///   background context to keep Core Data thread confinement correct.
-///
-/// Higher-level storage behavior (conforming to `CartStore`, mapping to domain)
-/// is implemented in later milestones (M4.3 / M4.4).
 public actor CoreDataCartStore {
     
     // MARK: - Core Data
