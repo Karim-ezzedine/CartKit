@@ -52,7 +52,7 @@ let package = Package(
                 "MultiCartCore"
             ],
             resources: [
-                .process("Resources")
+                .process("Resources/CartStorage.xcdatamodeld")
             ]
         ),
 
