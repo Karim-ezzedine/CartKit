@@ -30,7 +30,7 @@ public final class CartItemModifierModel {
         id: String,
         name: String,
         priceDeltaAmount: Decimal,
-        priceDeltaCurrencyCode: String,
+        priceDeltaCurrencyCode: String
     ) {
         self.id = id
         self.name = name
