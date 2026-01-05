@@ -3,53 +3,68 @@ import PackageDescription
 
 
 let package = Package(
-    name: "MultiCart",
+    name: "CartKit",
     platforms: [
         .iOS(.v15),
         .macOS(.v10_15)
     ],
     products: [
+        .library(
+            name: "CartKit",
+            targets: ["CartKit"]
+        ),
         // Core domain, use cases, protocols
         .library(
-            name: "MultiCartCore",
-            targets: ["MultiCartCore"]
+            name: "CartKitCore",
+            targets: ["CartKitCore"]
         ),
-
         // Core Data-based storage implementation
         .library(
-            name: "MultiCartStorageCoreData",
-            targets: ["MultiCartStorageCoreData"]
+            name: "CartKitStorageCoreData",
+            targets: ["CartKitStorageCoreData"]
         ),
 
         // SwiftData-based storage implementation (iOS 17+ APIs inside)
         .library(
-            name: "MultiCartStorageSwiftData",
-            targets: ["MultiCartStorageSwiftData"]
+            name: "CartKitStorageSwiftData",
+            targets: ["CartKitStorageSwiftData"]
         ),
 
         // Testing helpers (fakes, builders, in-memory stores)
         .library(
-            name: "MultiCartTestingSupport",
-            targets: ["MultiCartTestingSupport"]
+            name: "CartKitTestingSupport",
+            targets: ["CartKitTestingSupport"]
         )
     ],
     dependencies: [
         // No external deps for now
     ],
     targets: [
+        
+        // MARK: - Factory
+        
+        .target(
+            name: "CartKit",
+            dependencies: [
+                "CartKitCore",
+                "CartKitStorageCoreData",
+                "CartKitStorageSwiftData"
+            ]
+        ),
+        
         // MARK: - Core
 
         .target(
-            name: "MultiCartCore",
+            name: "CartKitCore",
             dependencies: []
         ),
 
         // MARK: - Storage
 
         .target(
-            name: "MultiCartStorageCoreData",
+            name: "CartKitStorageCoreData",
             dependencies: [
-                "MultiCartCore"
+                "CartKitCore"
             ],
             resources: [
                 .process("Resources/CartStorage.momd")
@@ -57,37 +72,37 @@ let package = Package(
         ),
 
         .target(
-            name: "MultiCartStorageSwiftData",
+            name: "CartKitStorageSwiftData",
             dependencies: [
-                "MultiCartCore"
+                "CartKitCore"
             ]
         ),
 
         // MARK: - Testing Support
 
         .target(
-            name: "MultiCartTestingSupport",
+            name: "CartKitTestingSupport",
             dependencies: [
-                "MultiCartCore"
+                "CartKitCore"
             ]
         ),
 
         // MARK: - Tests (placeholder for now)
 
         .testTarget(
-            name: "MultiCartCoreTests",
+            name: "CartKitCoreTests",
             dependencies: [
-                "MultiCartCore",
-                "MultiCartTestingSupport"
+                "CartKitCore",
+                "CartKitTestingSupport"
             ]
         ),
         
         .testTarget(
             name: "CartStorageCoreDataTests",
             dependencies: [
-                "MultiCartStorageCoreData",
-                "MultiCartCore",
-                "MultiCartTestingSupport"
+                "CartKitStorageCoreData",
+                "CartKitCore",
+                "CartKitTestingSupport"
             ]
         )
     ]

@@ -1,7 +1,7 @@
 import Foundation
 import Testing
-import MultiCartCore
-import MultiCartStorageCoreData
+import CartKitCore
+import CartKitStorageCoreData
 
 struct CoreDataCartStoreTests {
     

@@ -1,8 +1,8 @@
-# MultiCart
+# CartKit
 
 A modular, local multi-cart engine for iOS apps.
 
-MultiCart lets you manage multiple carts per user/profile/store, with pluggable storage (Core Data, SwiftData, or your own) and configurable pricing / validation / promotion engines.
+CartKit lets you manage multiple carts per user/profile/store, with pluggable storage (Core Data, SwiftData, or your own) and configurable pricing / validation / promotion engines.
 
 > **Status:** WIP – Phase 1 (Local Multi Cart Core).  
 > APIs and behavior may change until v1.0 is tagged.
@@ -21,19 +21,19 @@ SwiftData-based storage lives in a separate target and is only available on **iO
 
 ## Targets / Modules
 
-- **`MultiCartCore`**  
+- **`CartKitCore`**  
   Core domain types (`Cart`, `CartItem`, `CartTotals`, `Money`, etc.), `CartManager`, configuration, and extension-point protocols (pricing, validation, promotions, analytics, conflict resolution, cart ID generation).
 
-- **`MultiCartStorageCoreData`**  
+- **`CartKitStorageCoreData`**  
   Core Data–based `CartStore` implementation (iOS 15+).
 
-- **`MultiCartStorageSwiftData`**  
+- **`CartKitStorageSwiftData`**  
   SwiftData-based `CartStore` implementation (iOS 17+; types are guarded with `@available(iOS 17, *)` and `#if canImport(SwiftData)`).
 
-- **`MultiCartTestingSupport`**  
+- **`CartKitTestingSupport`**  
   Test helpers (fakes, in-memory stores, builders) for unit and integration tests.
 
-Most of your app code will only need **`MultiCartCore`**; storage targets are typically used in the composition / DI layer.
+Most of your app code will only need **`CartKitCore`**; storage targets are typically used in the composition / DI layer.
 
 ---
 
@@ -46,5 +46,5 @@ Most of your app code will only need **`MultiCartCore`**; storage targets are ty
 2. Enter the repo URL, for example:
 
    ```text
-   https://github.com/Karim-ezzedine/MultiCart
+   https://github.com/Karim-ezzedine/CartKit
 
