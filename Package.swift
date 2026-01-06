@@ -98,9 +98,18 @@ let package = Package(
         ),
         
         .testTarget(
-            name: "CartStorageCoreDataTests",
+            name: "CartKitStorageCoreDataTests",
             dependencies: [
                 "CartKitStorageCoreData",
+                "CartKitCore",
+                "CartKitTestingSupport"
+            ]
+        ),
+        
+        .testTarget(
+            name: "CartKitStorageSwiftDataTests",
+            dependencies: [
+                "CartKitStorageSwiftData",
                 "CartKitCore",
                 "CartKitTestingSupport"
             ]
