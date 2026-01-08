@@ -187,6 +187,150 @@ struct CartManagerDomainTests {
         #expect(fetchedGuest?.id == guestCart.id)
         #expect(fetchedProfile?.id == profileCart.id)
     }
+    
+    //MARK: - Get Cart Tests
+    
+    @Test
+    func getCart_returnsCart_whenExists() async throws {
+        let cart = CartTestFixtures.guestCart(storeID: StoreID(rawValue: "store_get"))
+        let manager = makeManager(initialCarts: [cart])
+
+        let loaded = try await manager.getCart(id: cart.id)
+
+        let unwrapped = try #require(loaded)
+        #expect(unwrapped.id == cart.id)
+    }
+    
+    @Test
+    func getCart_returnsNil_whenMissing() async throws {
+        let manager = makeManager(initialCarts: [])
+        let loaded = try await manager.getCart(id: CartID.generate())
+        #expect(loaded == nil)
+    }
+    
+    //MARK: - Reorder Tests
+    
+    @Test
+    func reorder_throws_whenSourceCartMissing() async throws {
+        let manager = makeManager()
+        await #expect(throws: CartError.self) {
+            _ = try await manager.reorder(from: CartID.generate())
+        }
+    }
+
+    @Test
+    func reorder_createsNewActiveCart_withNewIDs_andCopiedFields() async throws {
+        let storeID = StoreID(rawValue: "store_reorder_core")
+        let profileID: UserProfileID? = nil
+
+        var source = CartTestFixtures.guestCart(storeID: storeID)
+
+        source.displayName = "My Cart"
+        source.context = "home"
+        source.metadata = ["k": "v"]
+        source.storeImageURL = URL(string: "https://example.com/s.png")
+        source.minSubtotal = Money(amount: 10, currencyCode: "USD")
+        source.maxItemCount = 7
+
+        let manager = makeManager(initialCarts: [source])
+
+        let reordered = try await manager.reorder(from: source.id)
+
+        #expect(reordered.id != source.id)
+        #expect(reordered.status == .active)
+        #expect(reordered.storeID == storeID)
+        #expect(reordered.profileID == profileID)
+
+        #expect(reordered.displayName == source.displayName)
+        #expect(reordered.context == source.context)
+        #expect(reordered.metadata == source.metadata)
+        #expect(reordered.storeImageURL == source.storeImageURL)
+        #expect(reordered.minSubtotal == source.minSubtotal)
+        #expect(reordered.maxItemCount == source.maxItemCount)
+    }
+
+    @Test
+    func reorder_regeneratesCartItemIDs_butKeepsItemContent() async throws {
+        let storeID = StoreID(rawValue: "store_reorder_items")
+        var source = CartTestFixtures.guestCart(storeID: storeID)
+
+        // Ensure at least one item exists; if fixture is empty, add one.
+        if source.items.isEmpty {
+            source.items = [
+                CartItem(
+                    id: CartItemID.generate(),
+                    productID: "p1",
+                    quantity: 2,
+                    unitPrice: Money(amount: 5, currencyCode: "USD"),
+                    modifiers: [CartItemModifier(id: "m1", name: "extra", priceDelta: Money(amount: 1, currencyCode: "USD"))],
+                    imageURL: URL(string: "https://example.com/i.png"),
+                    availableStock: 10
+                )
+            ]
+        }
+
+        let manager = makeManager(initialCarts: [source])
+        let reordered = try await manager.reorder(from: source.id)
+
+        #expect(reordered.items.count == source.items.count)
+
+        let sourceByProduct = Dictionary(uniqueKeysWithValues: source.items.map { ($0.productID, $0) })
+        for item in reordered.items {
+            let original = try #require(sourceByProduct[item.productID])
+            #expect(item.id != original.id)              // regenerated
+            #expect(item.productID == original.productID)
+            #expect(item.quantity == original.quantity)
+            #expect(item.unitPrice == original.unitPrice)
+            #expect(item.totalPrice == original.totalPrice)
+            #expect(item.modifiers == original.modifiers)
+            #expect(item.imageURL == original.imageURL)
+            #expect(item.availableStock == original.availableStock)
+        }
+    }
+
+    @Test
+    func reorder_expiresExistingActiveCart_inSameScope() async throws {
+        let storeID = StoreID(rawValue: "store_reorder_expire")
+
+        // Existing active cart in scope
+        var active = CartTestFixtures.guestCart(storeID: storeID)
+        active.status = .active
+
+        // Source cart (can also be active or non-active; reorder source is independent)
+        var source = CartTestFixtures.guestCart(storeID: storeID)
+        source.status = .expired
+
+        let manager = makeManager(initialCarts: [active, source])
+
+        let reordered = try await manager.reorder(from: source.id)
+
+        #expect(reordered.status == .active)
+        #expect(reordered.storeID == storeID)
+
+        // Old active cart should now be expired
+        let oldLoaded = try await manager.getCart(id: active.id)
+        let old = try #require(oldLoaded)
+        #expect(old.status == .expired)
+    }
+
+    @Test
+    func reorder_doesNotExpireActiveCart_inDifferentScope() async throws {
+        let storeA = StoreID(rawValue: "store_A")
+        let storeB = StoreID(rawValue: "store_B")
+
+        var activeA = CartTestFixtures.guestCart(storeID: storeA)
+        activeA.status = .active
+
+        let sourceB = CartTestFixtures.guestCart(storeID: storeB)
+
+        let manager = makeManager(initialCarts: [activeA, sourceB])
+
+        _ = try await manager.reorder(from: sourceB.id)
+
+        let stillActiveA = try await manager.getCart(id: activeA.id)
+        let a = try #require(stillActiveA)
+        #expect(a.status == .active)   // untouched
+    }
 }
 
 // MARK: - Test doubles

@@ -23,6 +23,11 @@ public actor CartManager {
     
     // MARK: - Cart lifecycle
     
+    /// Simple read helper (keeps consumers talking to the facade).
+    public func getCart(id: CartID) async throws -> Cart? {
+        try await config.cartStore.loadCart(id: id)
+    }
+    
     /// Creates a new cart for the given store + optional profile.
     @discardableResult
     private func createCart(
@@ -218,6 +223,54 @@ public actor CartManager {
                 profileId: cart.profileID
             )
         }
+    }
+    
+    /// Reorder flow:
+    /// - creates a new active cart copy from a source cart\n
+    /// - expires any existing active cart in that scope
+    /// - emits activeCartChanged to the new cart
+    public func reorder(from sourceCartID: CartID) async throws -> Cart {
+        guard let source = try await config.cartStore.loadCart(id: sourceCartID) else {
+            throw CartError.conflict(reason: "Cart not found")
+        }
+
+        // Enforce one-active-per-scope by expiring the current active cart (if any)
+        if let active = try await getActiveCart(storeID: source.storeID, profileID: source.profileID) {
+            if active.status == .active {
+                var expired = active
+                expired.status = .expired
+                _ = try await saveCartAfterMutation(expired)
+            }
+        }
+
+        let now = Date()
+
+        let newCart = Cart(
+            id: CartID.generate(),
+            storeID: source.storeID,
+            profileID: source.profileID,
+            items: cloneItemsRegeneratingIDs(from: source.items),
+            status: .active,
+            createdAt: now,
+            updatedAt: now,
+            metadata: source.metadata,
+            displayName: source.displayName,
+            context: source.context,
+            storeImageURL: source.storeImageURL,
+            minSubtotal: source.minSubtotal,
+            maxItemCount: source.maxItemCount
+        )
+
+        try await config.cartStore.saveCart(newCart)
+        config.analyticsSink.cartCreated(newCart)
+
+        config.analyticsSink.activeCartChanged(
+            newActiveCartId: newCart.id,
+            storeId: newCart.storeID,
+            profileId: newCart.profileID
+        )
+
+        return newCart
     }
     
     // MARK: - Pricing
@@ -523,5 +576,25 @@ public actor CartManager {
         }
         
         throw CartError.conflict(reason: "Invalid cart status transition")
+    }
+    
+    
+    /// Clones cart items while regenerating their identities.
+    ///
+    /// Used during cart duplication/reorder to preserve item contents
+    /// while avoiding identity coupling between the source and new cart.
+    private func cloneItemsRegeneratingIDs(from items: [CartItem]) -> [CartItem] {
+        items.map { item in
+            CartItem(
+                id: CartItemID.generate(),
+                productID: item.productID,
+                quantity: item.quantity,
+                unitPrice: item.unitPrice,
+                totalPrice: item.totalPrice,
+                modifiers: item.modifiers,
+                imageURL: item.imageURL,
+                availableStock: item.availableStock
+            )
+        }
     }
 }

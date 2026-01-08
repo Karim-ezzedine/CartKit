@@ -1,4 +1,5 @@
-import XCTest
+import Foundation
+import Testing
 @testable import CartKitCore
 import CartKitTestingSupport
 
@@ -6,18 +7,22 @@ import CartKitTestingSupport
 @testable import CartKitStorageSwiftData
 import SwiftData
 
-@available(iOS 17, *)
-final class SwiftDataCartStoreTests: XCTestCase {
+struct SwiftDataCartStoreTests {
 
-    private var store: SwiftDataCartStore!
-
-    override func setUp() async throws {
-        store = try SwiftDataCartStore(configuration: .init(inMemory: true))
+    // Swift Testing has no XCTestCase.setUp().
+    // Keep tests isolated by creating a fresh in-memory store per test.
+    @available(iOS 17, *)
+    private func makeStore() throws -> SwiftDataCartStore {
+        try SwiftDataCartStore(configuration: .init(inMemory: true))
     }
 
     // MARK: - CRUD
 
-    func test_save_then_load_returns_cart() async throws {
+    @Test("save then load returns cart")
+    @available(iOS 17, *)
+    func save_then_load_returns_cart() async throws {
+        let store = try makeStore()
+
         let now = Date()
         let cart = CartTestFixtures.guestCart(
             storeID: CartTestFixtures.demoStoreID,
@@ -28,15 +33,19 @@ final class SwiftDataCartStoreTests: XCTestCase {
 
         let loaded = try await store.loadCart(id: cart.id)
 
-        XCTAssertNotNil(loaded)
-        XCTAssertEqual(loaded?.id, cart.id)
-        XCTAssertEqual(loaded?.storeID, cart.storeID)
-        XCTAssertEqual(loaded?.profileID, nil) // guest
-        XCTAssertEqual(loaded?.status, cart.status)
-        XCTAssertEqual(loaded?.items.count, cart.items.count)
+        let unwrapped = try #require(loaded)
+        #expect(unwrapped.id == cart.id)
+        #expect(unwrapped.storeID == cart.storeID)
+        #expect(unwrapped.profileID == nil) // guest
+        #expect(unwrapped.status == cart.status)
+        #expect(unwrapped.items.count == cart.items.count)
     }
 
-    func test_save_twice_updates_existing_cart() async throws {
+    @Test("save twice updates existing cart")
+    @available(iOS 17, *)
+    func save_twice_updates_existing_cart() async throws {
+        let store = try makeStore()
+
         let now = Date()
         var cart = CartTestFixtures.loggedInCart(
             storeID: CartTestFixtures.demoStoreID,
@@ -46,28 +55,34 @@ final class SwiftDataCartStoreTests: XCTestCase {
 
         try await store.saveCart(cart)
 
-        // Simulate core bumping timestamps + changing content
         cart = Cart(
             id: cart.id,
             storeID: cart.storeID,
             profileID: cart.profileID,
-            items: cart.items, // keep items for now
+            items: cart.items,
             status: .active,
             createdAt: cart.createdAt,
             updatedAt: now.addingTimeInterval(60),
             metadata: cart.metadata,
             displayName: cart.displayName,
             context: cart.context,
-            storeImageURL: cart.storeImageURL
+            storeImageURL: cart.storeImageURL,
+            minSubtotal: cart.minSubtotal,
+            maxItemCount: cart.maxItemCount
         )
 
         try await store.saveCart(cart)
 
         let loaded = try await store.loadCart(id: cart.id)
-        XCTAssertEqual(loaded?.updatedAt, cart.updatedAt)
+        let unwrapped = try #require(loaded)
+        #expect(unwrapped.updatedAt == cart.updatedAt)
     }
 
-    func test_delete_is_idempotent_and_removes_cart() async throws {
+    @Test("delete is idempotent and removes cart")
+    @available(iOS 17, *)
+    func delete_is_idempotent_and_removes_cart() async throws {
+        let store = try makeStore()
+
         let cart = CartTestFixtures.guestCart(storeID: CartTestFixtures.demoStoreID)
         try await store.saveCart(cart)
 
@@ -75,16 +90,23 @@ final class SwiftDataCartStoreTests: XCTestCase {
         try await store.deleteCart(id: cart.id) // idempotent: should not throw
 
         let loaded = try await store.loadCart(id: cart.id)
-        XCTAssertNil(loaded)
+        #expect(loaded == nil)
     }
 
     // MARK: - Query semantics
 
-    func test_fetch_filters_by_store_and_guest_scope() async throws {
-        let now = Date()
+    @Test("fetch filters by store and guest scope")
+    @available(iOS 17, *)
+    func fetch_filters_by_store_and_guest_scope() async throws {
+        let store = try makeStore()
 
+        let now = Date()
         let guestS1 = CartTestFixtures.guestCart(storeID: CartTestFixtures.demoStoreID, now: now)
-        let loggedS1 = CartTestFixtures.loggedInCart(storeID: CartTestFixtures.demoStoreID, profileID: CartTestFixtures.demoProfileID, now: now)
+        let loggedS1 = CartTestFixtures.loggedInCart(
+            storeID: CartTestFixtures.demoStoreID,
+            profileID: CartTestFixtures.demoProfileID,
+            now: now
+        )
         let guestS2 = CartTestFixtures.guestCart(storeID: CartTestFixtures.anotherStoreID, now: now)
 
         try await store.saveCart(guestS1)
@@ -100,16 +122,27 @@ final class SwiftDataCartStoreTests: XCTestCase {
 
         let result = try await store.fetchCarts(matching: query, limit: nil)
 
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result.first?.id, guestS1.id)
-        XCTAssertNil(result.first?.profileID)
+        #expect(result.count == 1)
+        #expect(result.first?.id == guestS1.id)
+        #expect(result.first?.profileID == nil)
     }
 
-    func test_fetch_filters_by_profile_scope() async throws {
-        let now = Date()
+    @Test("fetch filters by profile scope")
+    @available(iOS 17, *)
+    func fetch_filters_by_profile_scope() async throws {
+        let store = try makeStore()
 
-        let loggedA = CartTestFixtures.loggedInCart(storeID: CartTestFixtures.demoStoreID, profileID: CartTestFixtures.demoProfileID, now: now)
-        let loggedB = CartTestFixtures.loggedInCart(storeID: CartTestFixtures.demoStoreID, profileID: UserProfileID(rawValue: "user_other"), now: now)
+        let now = Date()
+        let loggedA = CartTestFixtures.loggedInCart(
+            storeID: CartTestFixtures.demoStoreID,
+            profileID: CartTestFixtures.demoProfileID,
+            now: now
+        )
+        let loggedB = CartTestFixtures.loggedInCart(
+            storeID: CartTestFixtures.demoStoreID,
+            profileID: UserProfileID(rawValue: "user_other"),
+            now: now
+        )
 
         try await store.saveCart(loggedA)
         try await store.saveCart(loggedB)
@@ -123,17 +156,23 @@ final class SwiftDataCartStoreTests: XCTestCase {
 
         let result = try await store.fetchCarts(matching: query, limit: nil)
 
-        XCTAssertEqual(result.count, 1)
-        XCTAssertEqual(result.first?.profileID, CartTestFixtures.demoProfileID)
+        #expect(result.count == 1)
+        #expect(result.first?.profileID == CartTestFixtures.demoProfileID)
     }
 
-    func test_fetch_filters_by_statuses() async throws {
+    @Test("fetch filters by statuses")
+    @available(iOS 17, *)
+    func fetch_filters_by_statuses() async throws {
+        let store = try makeStore()
+
         let now = Date()
-
         let guest = CartTestFixtures.guestCart(storeID: CartTestFixtures.demoStoreID, now: now)
-        var logged = CartTestFixtures.loggedInCart(storeID: CartTestFixtures.demoStoreID, profileID: CartTestFixtures.demoProfileID, now: now)
+        var logged = CartTestFixtures.loggedInCart(
+            storeID: CartTestFixtures.demoStoreID,
+            profileID: CartTestFixtures.demoProfileID,
+            now: now
+        )
 
-        // Create additional carts by copying with different status
         let guestSaved = Cart(
             id: CartID.generate(),
             storeID: guest.storeID,
@@ -154,7 +193,9 @@ final class SwiftDataCartStoreTests: XCTestCase {
             metadata: guest.metadata,
             displayName: guest.displayName,
             context: guest.context,
-            storeImageURL: guest.storeImageURL
+            storeImageURL: guest.storeImageURL,
+            minSubtotal: guest.minSubtotal,
+            maxItemCount: guest.maxItemCount
         )
 
         logged = Cart(
@@ -168,7 +209,9 @@ final class SwiftDataCartStoreTests: XCTestCase {
             metadata: logged.metadata,
             displayName: logged.displayName,
             context: logged.context,
-            storeImageURL: logged.storeImageURL
+            storeImageURL: logged.storeImageURL,
+            minSubtotal: logged.minSubtotal,
+            maxItemCount: logged.maxItemCount
         )
 
         try await store.saveCart(guest)
@@ -184,13 +227,16 @@ final class SwiftDataCartStoreTests: XCTestCase {
 
         let result = try await store.fetchCarts(matching: query, limit: nil)
 
-        XCTAssertEqual(Set(result.map(\.status)), Set([.active, .expired]))
-        XCTAssertTrue(result.allSatisfy { $0.profileID == nil })
+        #expect(Set(result.map(\.status)) == Set([.active, .expired]))
+        #expect(result.allSatisfy { $0.profileID == nil })
     }
 
-    func test_fetch_applies_sort_and_limit() async throws {
-        let now = Date()
+    @Test("fetch applies sort and limit")
+    @available(iOS 17, *)
+    func fetch_applies_sort_and_limit() async throws {
+        let store = try makeStore()
 
+        let now = Date()
         let c1 = Cart(
             id: CartID.generate(),
             storeID: CartTestFixtures.demoStoreID,
@@ -202,7 +248,9 @@ final class SwiftDataCartStoreTests: XCTestCase {
             metadata: [:],
             displayName: nil,
             context: nil,
-            storeImageURL: nil
+            storeImageURL: nil,
+            minSubtotal: nil,
+            maxItemCount: nil
         )
 
         let c2 = Cart(
@@ -216,7 +264,9 @@ final class SwiftDataCartStoreTests: XCTestCase {
             metadata: [:],
             displayName: nil,
             context: nil,
-            storeImageURL: nil
+            storeImageURL: nil,
+            minSubtotal: nil,
+            maxItemCount: nil
         )
 
         let c3 = Cart(
@@ -230,7 +280,9 @@ final class SwiftDataCartStoreTests: XCTestCase {
             metadata: [:],
             displayName: nil,
             context: nil,
-            storeImageURL: nil
+            storeImageURL: nil,
+            minSubtotal: nil,
+            maxItemCount: nil
         )
 
         try await store.saveCart(c1)
@@ -246,8 +298,8 @@ final class SwiftDataCartStoreTests: XCTestCase {
 
         let result = try await store.fetchCarts(matching: query, limit: 2)
 
-        XCTAssertEqual(result.count, 2)
-        XCTAssertEqual(result.map(\.id), [c3.id, c2.id])
+        #expect(result.count == 2)
+        #expect(result.map(\.id) == [c3.id, c2.id])
     }
 }
 
