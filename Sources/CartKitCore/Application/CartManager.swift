@@ -555,9 +555,8 @@ public actor CartManager {
     
     /// Combine wrapper for `observeEvents()`.
     /// - Note: `async` is required because `CartManager` is an actor and this calls an actor-isolated method.
-    @MainActor
     public func eventsPublisher() async -> AnyPublisher<CartEvent, Never> {
-        let stream = await observeEvents() // actor hop
+        let stream = observeEvents()
         return AsyncStreamPublisher(stream).eraseToAnyPublisher()
     }
     
