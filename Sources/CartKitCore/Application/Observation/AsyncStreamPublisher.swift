@@ -64,7 +64,7 @@ public struct AsyncStreamPublisher<Output: Sendable>: Publisher {
         private var onFinish: (() -> Void)?
         
         init<S: Subscriber>(_ subscriber: S) where S.Input == Element, S.Failure == Never {
-            var subscriber = subscriber
+            let subscriber = subscriber
             
             self.onValue = { value in
                 _ = subscriber.receive(value)

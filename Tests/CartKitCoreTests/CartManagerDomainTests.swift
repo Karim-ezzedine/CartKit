@@ -593,6 +593,142 @@ struct CartManagerDomainTests {
         #expect(e2 == .activeCartChanged(storeID: storeID, profileID: profileID, cartID: migrated.id))
     }
 
+    // MARK: - Lifecycle / Cleanup
+
+    @Test
+    func cleanupCarts_neverDeletesActiveCart() async throws {
+        let storeID = StoreID("store_cleanup_active")
+        
+        var active = CartTestFixtures.guestCart(storeID: storeID)
+        active.status = .active
+        
+        let manager = makeManager(initialCarts: [active])
+        
+        let result = try await manager.cleanupCarts(
+            storeID: storeID,
+            policy: CartLifecyclePolicy(
+                maxArchivedCartsPerScope: 0,
+                deleteExpiredOlderThanDays: 0,
+                deleteCancelledOlderThanDays: 0,
+                deleteCheckedOutOlderThanDays: 0
+            ),
+            now: Date()
+        )
+        
+        #expect(result.deletedCartIDs.isEmpty)
+        let stillThere = try await manager.getCart(id: active.id)
+        #expect(stillThere != nil)
+        #expect(stillThere?.status == .active)
+    }
+
+    @Test
+    func cleanupCarts_deletesExpiredOlderThanThreshold() async throws {
+        let storeID = StoreID("store_cleanup_expired_age")
+        let now = Date()
+        
+        var expiredOld = CartTestFixtures.guestCart(storeID: storeID)
+        expiredOld.status = .expired
+        expiredOld.updatedAt = now.addingTimeInterval(-10 * 24 * 60 * 60) // 10 days ago
+        
+        var expiredNew = CartTestFixtures.guestCart(storeID: storeID)
+        expiredNew.status = .expired
+        expiredNew.updatedAt = now.addingTimeInterval(-2 * 24 * 60 * 60) // 2 days ago
+        
+        let manager = makeManager(initialCarts: [expiredOld, expiredNew])
+        
+        let result = try await manager.cleanupCarts(
+            storeID: storeID,
+            policy: CartLifecyclePolicy(
+                maxArchivedCartsPerScope: nil,
+                deleteExpiredOlderThanDays: 7,
+                deleteCancelledOlderThanDays: nil,
+                deleteCheckedOutOlderThanDays: nil
+            ),
+            now: now
+        )
+        
+        #expect(result.deletedCartIDs.contains(expiredOld.id))
+        #expect(!result.deletedCartIDs.contains(expiredNew.id))
+        
+        #expect(try await manager.getCart(id: expiredOld.id) == nil)
+        #expect(try await manager.getCart(id: expiredNew.id) != nil)
+    }
+
+    @Test
+    func cleanupCarts_appliesMaxArchivedRetention_keepsMostRecent() async throws {
+        let storeID = StoreID("store_cleanup_retention")
+        let now = Date()
+        
+        func makeNonActiveCart(daysAgo: Int, status: CartStatus) -> Cart {
+            var cart = CartTestFixtures.guestCart(storeID: storeID)
+            cart.status = status
+            cart.updatedAt = now.addingTimeInterval(TimeInterval(-daysAgo * 24 * 60 * 60))
+            return cart
+        }
+        
+        let c1 = makeNonActiveCart(daysAgo: 1, status: .expired)     // newest
+        let c2 = makeNonActiveCart(daysAgo: 2, status: .cancelled)
+        let c3 = makeNonActiveCart(daysAgo: 3, status: .checkedOut)  // oldest
+        
+        let manager = makeManager(initialCarts: [c1, c2, c3])
+        
+        let result = try await manager.cleanupCarts(
+            storeID: storeID,
+            policy: CartLifecyclePolicy(
+                maxArchivedCartsPerScope: 2,
+                deleteExpiredOlderThanDays: nil,
+                deleteCancelledOlderThanDays: nil,
+                deleteCheckedOutOlderThanDays: nil
+            ),
+            now: now
+        )
+        
+        // Should delete only the oldest (c3).
+        #expect(result.deletedCartIDs == [c3.id].sorted(by: { $0.rawValue < $1.rawValue }))
+        #expect(try await manager.getCart(id: c1.id) != nil)
+        #expect(try await manager.getCart(id: c2.id) != nil)
+        #expect(try await manager.getCart(id: c3.id) == nil)
+    }
+
+    @Test
+    func cleanupCarts_isScoped_doesNotCrossStoreOrProfile() async throws {
+        let now = Date()
+        
+        let storeA = StoreID("store_cleanup_A")
+        let storeB = StoreID("store_cleanup_B")
+        let profile = UserProfileID("profile_cleanup")
+        
+        var expiredAGuest = CartTestFixtures.guestCart(storeID: storeA)
+        expiredAGuest.status = .expired
+        expiredAGuest.updatedAt = now.addingTimeInterval(-30 * 24 * 60 * 60)
+        
+        var expiredBGuest = CartTestFixtures.guestCart(storeID: storeB)
+        expiredBGuest.status = .expired
+        expiredBGuest.updatedAt = now.addingTimeInterval(-30 * 24 * 60 * 60)
+        
+        var expiredAProfile = CartTestFixtures.loggedInCart(storeID: storeA, profileID: profile)
+        expiredAProfile.status = .expired
+        expiredAProfile.updatedAt = now.addingTimeInterval(-30 * 24 * 60 * 60)
+        
+        let manager = makeManager(initialCarts: [expiredAGuest, expiredBGuest, expiredAProfile])
+        
+        _ = try await manager.cleanupCarts(
+            storeID: storeA,
+            profileID: nil,
+            policy: CartLifecyclePolicy(
+                maxArchivedCartsPerScope: nil,
+                deleteExpiredOlderThanDays: 7,
+                deleteCancelledOlderThanDays: nil,
+                deleteCheckedOutOlderThanDays: nil
+            ),
+            now: now
+        )
+        
+        // Only storeA guest expired should be deleted.
+        #expect(try await manager.getCart(id: expiredAGuest.id) == nil)
+        #expect(try await manager.getCart(id: expiredBGuest.id) != nil) // different store
+        #expect(try await manager.getCart(id: expiredAProfile.id) != nil) // different profile scope
+    }
 }
 
 // MARK: - Test doubles

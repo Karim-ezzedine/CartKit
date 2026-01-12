@@ -13,10 +13,10 @@ public struct CartQuery: Hashable, Codable, Sendable {
         /// Oldest carts first (by createdAt)
         case createdAtAscending
         
-        /// Newest carts first (by createdAt)/
+        /// Newest carts first (by createdAt)
         case createdAtDescending
         
-        /// Least recently updated first/
+        /// Least recently updated first
         case updatedAtAscending
         
         /// Most recently updated first (default)

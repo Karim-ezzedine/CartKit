@@ -111,9 +111,8 @@ public actor CartManager {
     /// - `.active` → `.checkedOut`, `.cancelled`, `.expired`
     /// - Any status → same status (no-op)
     ///
-    /// Once a cart is non-active, it is treated as terminal and its status
-    /// cannot be changed again. This rule applies equally to guest and
-    /// logged-in carts.
+    /// Once a cart is non-active, it is treated as terminal and its status cannot be
+    /// changed again. This rule applies equally to guest and logged-in carts.
     ///
     /// When transitioning to `.checkedOut`, the cart is first validated via
     /// the configured `CartValidationEngine.validate(cart:)`. If validation
@@ -137,7 +136,9 @@ public actor CartManager {
         if newStatus == .checkedOut {
             
             guard cart.profileID != nil else {
-                throw CartError.validationFailed(reason: "Profile ID is missing, cannot update cart status to checkedOut")
+                throw CartError.validationFailed(
+                    reason: "Profile ID is missing, cannot update cart status to checkedOut"
+                )
             }
             
             let result = await config.validationEngine.validate(cart: cart)
@@ -156,16 +157,11 @@ public actor CartManager {
         // longer an active cart for this scope. (A new one can be created
         // later via `setActiveCart`.)
         if oldStatus == .active, newStatus != .active {
-            config.analyticsSink.activeCartChanged(
-                newActiveCartId: nil,
-                storeId: updatedCart.storeID,
-                profileId: updatedCart.profileID
-            )
-            emit(.activeCartChanged(
+            signalActiveCartChanged(
                 storeID: updatedCart.storeID,
                 profileID: updatedCart.profileID,
-                cartID: nil
-            ))
+                newActiveCartID: nil
+            )
         }
         
         return updatedCart
@@ -223,22 +219,14 @@ public actor CartManager {
             return
         }
         
-        try await config.cartStore.deleteCart(id: id)
-        config.analyticsSink.cartDeleted(id: id)
-        
-        emit(.cartDeleted(id))
+        _ = try await deleteCartAndEmit(id)
         
         if cart.status == .active {
-            config.analyticsSink.activeCartChanged(
-                newActiveCartId: nil,
-                storeId: cart.storeID,
-                profileId: cart.profileID
-            )
-            emit(.activeCartChanged(
+            signalActiveCartChanged(
                 storeID: cart.storeID,
                 profileID: cart.profileID,
-                cartID: nil
-            ))
+                newActiveCartID: nil
+            )
         }
     }
     
@@ -250,12 +238,9 @@ public actor CartManager {
     /// - persists it and emits `activeCartChanged`.
     public func reorder(from sourceCartID: CartID) async throws -> Cart {
         let source = try await loadCartOrThrow(sourceCartID)
-
         // Enforce one-active-per-scope by expiring the current active cart (if any)
         try await expireActiveCartIfNeeded(storeID: source.storeID, profileID: source.profileID)
-
         let newCart = makeActiveCartCopy(from: source, profileID: source.profileID)
-
         return try await persistNewCart(newCart, setAsActive: true)
     }
 
@@ -306,19 +291,16 @@ public actor CartManager {
 
             let saved = try await saveCartAfterMutation(moved)
 
-            config.analyticsSink.activeCartChanged(
-                newActiveCartId: saved.id,
-                storeId: storeID,
-                profileId: profileID
+            signalActiveCartChanged(
+                storeID: storeID,
+                profileID: profileID,
+                newActiveCartID: saved.id
             )
-            
-            emit(.activeCartChanged(storeID: storeID, profileID: profileID, cartID: saved.id))
 
             return saved
 
         case .copyAndDelete:
             let newCart = makeActiveCartCopy(from: guestActive, profileID: profileID)
-
             let saved = try await persistNewCart(newCart, setAsActive: true)
 
             try await deleteCart(id: guestActive.id)
@@ -537,6 +519,89 @@ public actor CartManager {
         )
     }
     
+    // MARK: - Lifecycle / Cleanup
+
+    /// Cleans up non-active carts for a given scope based on the provided policy.
+    ///
+    /// Behavior:
+    /// - Never deletes `.active` carts.
+    /// - Applies time-based deletion per status (using `updatedAt`).
+    /// - Applies max-archived retention by keeping most-recent carts.
+    /// - Scope is always enforced (storeID + profileID?).
+    public func cleanupCarts(
+        storeID: StoreID,
+        profileID: UserProfileID? = nil,
+        policy: CartLifecyclePolicy,
+        now: Date = Date()
+    ) async throws -> CartCleanupResult {
+        
+        // Fetch all carts in scope (any status), sorted by most-recent update.
+        let all = try await config.cartStore.fetchCarts(
+            matching: CartQuery(
+                storeID: storeID,
+                profileID: profileID,
+                statuses: nil,
+                sort: .updatedAtDescending
+            ),
+            limit: nil
+        )
+        
+        // Active carts are never deleted.
+        let nonActive = all.filter { $0.status != .active }
+        
+        var toDelete = Set<CartID>()
+        
+        // Time-based deletion
+        func isOlderThanDays(_ cart: Cart, _ days: Int) -> Bool {
+            guard days >= 0 else { return false }
+            let threshold = now.addingTimeInterval(TimeInterval(-days * 24 * 60 * 60))
+            return cart.updatedAt < threshold
+        }
+        
+        for cart in nonActive {
+            switch cart.status {
+            case .expired:
+                if let days = policy.deleteExpiredOlderThanDays, isOlderThanDays(cart, days) {
+                    toDelete.insert(cart.id)
+                }
+            case .cancelled:
+                if let days = policy.deleteCancelledOlderThanDays, isOlderThanDays(cart, days) {
+                    toDelete.insert(cart.id)
+                }
+            case .checkedOut:
+                if let days = policy.deleteCheckedOutOlderThanDays, isOlderThanDays(cart, days) {
+                    toDelete.insert(cart.id)
+                }
+            case .active:
+                break
+            }
+        }
+        
+        // Max archived retention (after time-based deletions)
+        if let max = policy.maxArchivedCartsPerScope, max >= 0 {
+            let remaining = nonActive
+                .filter { !toDelete.contains($0.id) }
+            
+            if remaining.count > max {
+                let overflow = remaining.suffix(remaining.count - max)
+                for cart in overflow {
+                    toDelete.insert(cart.id)
+                }
+            }
+        }
+        
+        // Delete
+        var deleted: [CartID] = []
+        for id in toDelete {
+            try await deleteCartAndEmit(id)
+            deleted.append(id)
+        }
+        
+        // Deterministic output
+        deleted.sort { $0.rawValue < $1.rawValue }
+        return CartCleanupResult(deletedCartIDs: deleted)
+    }
+    
     // MARK: - Observes
     
     /// Observes cart events emitted by this `CartManager` instance.
@@ -732,23 +797,30 @@ public actor CartManager {
     ) async throws -> Cart {
         try await config.cartStore.saveCart(cart)
         config.analyticsSink.cartCreated(cart)
-
         emit(.cartCreated(cart.id))
 
         if setAsActive {
-            config.analyticsSink.activeCartChanged(
-                newActiveCartId: cart.id,
-                storeId: cart.storeID,
-                profileId: cart.profileID
-            )
-            emit(.activeCartChanged(
+            signalActiveCartChanged(
                 storeID: cart.storeID,
                 profileID: cart.profileID,
-                cartID: cart.id
-            ))
+                newActiveCartID: cart.id
+            )
         }
 
         return cart
+    }
+
+    /// Deletes a cart by id and emits deletion side-effects.
+    ///
+    /// - Important:
+    ///   - Does NOT handle active-cart semantics.
+    ///   - Caller is responsible for active-cart logic if needed.
+    @discardableResult
+    private func deleteCartAndEmit(_ id: CartID) async throws -> CartID {
+        try await config.cartStore.deleteCart(id: id)
+        config.analyticsSink.cartDeleted(id: id)
+        emit(.cartDeleted(id))
+        return id
     }
     
     /// Expires the currently active cart for the given scope, if one exists.
@@ -808,5 +880,23 @@ public actor CartManager {
         case .rejectWithError(let error):
             throw error
         }
+    }
+
+    /// Emits the active-cart change side-effects (analytics + event) for a given scope.
+    private func signalActiveCartChanged(
+        storeID: StoreID,
+        profileID: UserProfileID?,
+        newActiveCartID: CartID?
+    ) {
+        config.analyticsSink.activeCartChanged(
+            newActiveCartId: newActiveCartID,
+            storeId: storeID,
+            profileId: profileID
+        )
+        emit(.activeCartChanged(
+            storeID: storeID,
+            profileID: profileID,
+            cartID: newActiveCartID
+        ))
     }
 }
