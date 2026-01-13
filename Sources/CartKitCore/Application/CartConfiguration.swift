@@ -12,6 +12,7 @@ public struct CartConfiguration: Sendable {
     public let conflictResolver: CartConflictResolver?
     public let catalogConflictDetector: CartCatalogConflictDetector
     public let analyticsSink: CartAnalyticsSink
+    public let logger: CartLogger
 
     public init(
         cartStore: CartStore,
@@ -20,7 +21,8 @@ public struct CartConfiguration: Sendable {
         validationEngine: CartValidationEngine = DefaultCartValidationEngine(),
         conflictResolver: CartConflictResolver? = nil,
         catalogConflictDetector: CartCatalogConflictDetector = NoOpCartCatalogConflictDetector(),
-        analyticsSink: CartAnalyticsSink = NoOpCartAnalyticsSink()
+        analyticsSink: CartAnalyticsSink = NoOpCartAnalyticsSink(),
+        logger: CartLogger = DefaultCartLogger()
     ) {
         self.cartStore = cartStore
         self.pricingEngine = pricingEngine
@@ -29,5 +31,6 @@ public struct CartConfiguration: Sendable {
         self.conflictResolver = conflictResolver
         self.catalogConflictDetector = catalogConflictDetector
         self.analyticsSink = analyticsSink
+        self.logger = logger
     }
 }

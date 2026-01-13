@@ -10,7 +10,8 @@ public extension CartConfiguration {
         validationEngine: CartValidationEngine = DefaultCartValidationEngine(),
         conflictResolver: CartConflictResolver? = nil,
         catalogConflictDetector: CartCatalogConflictDetector = NoOpCartCatalogConflictDetector(),
-        analytics: CartAnalyticsSink = NoOpCartAnalyticsSink()
+        analytics: CartAnalyticsSink = NoOpCartAnalyticsSink(),
+        logger: CartLogger = DefaultCartLogger()
     ) async throws -> CartConfiguration {
 
         let store = try await CartStoreFactory.makeStore(preference: storage)
@@ -22,7 +23,8 @@ public extension CartConfiguration {
             validationEngine: validationEngine,
             conflictResolver: conflictResolver,
             catalogConflictDetector: catalogConflictDetector,
-            analyticsSink: analytics
+            analyticsSink: analytics,
+            logger: logger
         )
     }
 }

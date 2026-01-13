@@ -597,6 +597,10 @@ public actor CartManager {
             deleted.append(id)
         }
         
+        config.logger.log(
+            "Cleanup completed:\nstore=\(storeID.rawValue),\nprofile=\(profileID?.rawValue ?? "guest"),\ndeleted=\(deleted.count)"
+        )
+        
         // Deterministic output
         deleted.sort { $0.rawValue < $1.rawValue }
         return CartCleanupResult(deletedCartIDs: deleted)
@@ -798,6 +802,7 @@ public actor CartManager {
         try await config.cartStore.saveCart(cart)
         config.analyticsSink.cartCreated(cart)
         emit(.cartCreated(cart.id))
+        config.logger.log("Cart created: \(cart.id.rawValue)")
 
         if setAsActive {
             signalActiveCartChanged(
@@ -820,6 +825,7 @@ public actor CartManager {
         try await config.cartStore.deleteCart(id: id)
         config.analyticsSink.cartDeleted(id: id)
         emit(.cartDeleted(id))
+        config.logger.log("Cart deleted: \(id.rawValue)")
         return id
     }
     
@@ -863,9 +869,17 @@ public actor CartManager {
         guard !conflicts.isEmpty else {
             return (proposedCart, [])
         }
+        
+        config.logger.log(
+            "Catalog conflicts detected:\ncart=\(proposedCart.id.rawValue),\nstore=\(proposedCart.storeID.rawValue), profile=\(proposedCart.profileID?.rawValue ?? "guest"),\ncount=\(conflicts.count)"
+        )
+
 
         // Conflicts, but no resolver configured → persist as-is and report conflicts.
         guard let resolver = config.conflictResolver else {
+            config.logger.log(
+                "Catalog conflicts present, no resolver configured:\npersisting as-is (cart=\(proposedCart.id.rawValue))"
+            )
             return (proposedCart, conflicts)
         }
 
@@ -875,9 +889,19 @@ public actor CartManager {
 
         switch resolution {
         case .acceptModifiedCart(let resolvedCart):
+            let modified = resolvedCart.id != proposedCart.id
+                || resolvedCart.items != proposedCart.items
+                || resolvedCart.status != proposedCart.status
+
+            config.logger.log(
+                "Catalog conflicts resolved:\ndecision=acceptModifiedCart,\nmodified=\(modified),\ncart=\(proposedCart.id.rawValue)"
+            )
             return (resolvedCart, conflicts)
 
         case .rejectWithError(let error):
+            config.logger.log(
+                "Catalog conflicts resolved:\ndecision=rejectWithError,\ncart=\(proposedCart.id.rawValue),\nerror=\(String(describing: error))"
+            )
             throw error
         }
     }
@@ -898,5 +922,8 @@ public actor CartManager {
             profileID: profileID,
             cartID: newActiveCartID
         ))
+        config.logger.log(
+            "Active cart changed:\nstore=\(storeID.rawValue),\nprofile=\(profileID?.rawValue ?? "guest"),\ncart=\(newActiveCartID?.rawValue ?? "nil")"
+        )
     }
 }

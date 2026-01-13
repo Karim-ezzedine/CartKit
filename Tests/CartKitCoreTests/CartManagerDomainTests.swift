@@ -4,22 +4,22 @@ import Testing
 import CartKitTestingSupport
 
 struct CartManagerDomainTests {
-
+    
     // MARK: - Factory
 
-    private func makeManager(
+    private func makeSUT(
         initialCarts: [Cart] = [],
         detector: CartCatalogConflictDetector = NoOpCartCatalogConflictDetector()
-    ) -> CartManager {
-        let store = InMemoryCartStore(initialCarts: initialCarts)
-
-        let config = CartConfiguration(
-            cartStore: store,
-            conflictResolver: NoOpConflictResolver(),
+    ) -> (manager: CartManager, support: MultiCartTestingSupport) {
+        
+        let support = MultiCartTestingSupport(initialCarts: initialCarts)
+        
+        let config = support.makeConfiguration(
             catalogConflictDetector: detector
         )
-
-        return CartManager(configuration: config)
+        
+        let manager = CartManager(configuration: config)
+        return (manager, support)
     }
     
     // MARK: - Event helpers
@@ -40,7 +40,7 @@ struct CartManagerDomainTests {
 
     @Test
     func addItem_appendsItem_andReportsChangedItems() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_add")
         
         let cart = try await manager.setActiveCart(storeID: storeID)
@@ -66,7 +66,7 @@ struct CartManagerDomainTests {
 
     @Test
     func updateItem_changesExistingItem_andReportsChange() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_update")
         
         var cart = try await manager.setActiveCart(storeID: storeID)
@@ -97,7 +97,7 @@ struct CartManagerDomainTests {
 
     @Test
     func removeItem_removesLine_andReportsRemovedItems() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_remove")
         
         var cart = try await manager.setActiveCart(storeID: storeID)
@@ -126,7 +126,7 @@ struct CartManagerDomainTests {
 
     @Test
     func updateStatus_allowsActiveToCheckedOut() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_status")
         let profileID = UserProfileID(rawValue: "user_1")
 
@@ -142,7 +142,7 @@ struct CartManagerDomainTests {
 
     @Test
     func updateStatus_disallowsCheckedOutBackToActive() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_status_back")
         let profileID = UserProfileID(rawValue: "user_1")
 
@@ -158,7 +158,7 @@ struct CartManagerDomainTests {
 
     @Test
     func setActiveCart_reusesExistingActive_forSameScope() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_scope")
         let profileID = UserProfileID(rawValue: "user_1")
 
@@ -170,7 +170,7 @@ struct CartManagerDomainTests {
 
     @Test
     func activeCarts_areScopedByStoreID() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let profileID = UserProfileID(rawValue: "user_scope")
 
         let storeA = StoreID(rawValue: "store_A")
@@ -189,7 +189,7 @@ struct CartManagerDomainTests {
 
     @Test
     func guestAndProfileCarts_areDistinctScopes() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_guest_profile")
         let profileID = UserProfileID(rawValue: "user_42")
 
@@ -209,7 +209,7 @@ struct CartManagerDomainTests {
     @Test
     func getCart_returnsCart_whenExists() async throws {
         let cart = CartTestFixtures.guestCart(storeID: StoreID(rawValue: "store_get"))
-        let manager = makeManager(initialCarts: [cart])
+        let (manager, _) = makeSUT(initialCarts: [cart])
 
         let loaded = try await manager.getCart(id: cart.id)
 
@@ -219,7 +219,7 @@ struct CartManagerDomainTests {
     
     @Test
     func getCart_returnsNil_whenMissing() async throws {
-        let manager = makeManager(initialCarts: [])
+        let (manager, _) = makeSUT(initialCarts: [])
         let loaded = try await manager.getCart(id: CartID.generate())
         #expect(loaded == nil)
     }
@@ -228,7 +228,7 @@ struct CartManagerDomainTests {
     
     @Test
     func reorder_throws_whenSourceCartMissing() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         await #expect(throws: CartError.self) {
             _ = try await manager.reorder(from: CartID.generate())
         }
@@ -248,8 +248,7 @@ struct CartManagerDomainTests {
         source.minSubtotal = Money(amount: 10, currencyCode: "USD")
         source.maxItemCount = 7
 
-        let manager = makeManager(initialCarts: [source])
-
+        let (manager, _) = makeSUT(initialCarts: [source])
         let reordered = try await manager.reorder(from: source.id)
 
         #expect(reordered.id != source.id)
@@ -285,7 +284,7 @@ struct CartManagerDomainTests {
             ]
         }
 
-        let manager = makeManager(initialCarts: [source])
+        let (manager, _) = makeSUT(initialCarts: [source])
         let reordered = try await manager.reorder(from: source.id)
 
         #expect(reordered.items.count == source.items.count)
@@ -316,7 +315,7 @@ struct CartManagerDomainTests {
         var source = CartTestFixtures.guestCart(storeID: storeID)
         source.status = .expired
 
-        let manager = makeManager(initialCarts: [active, source])
+        let (manager, _) = makeSUT(initialCarts: [active, source])
 
         let reordered = try await manager.reorder(from: source.id)
 
@@ -339,7 +338,7 @@ struct CartManagerDomainTests {
 
         let sourceB = CartTestFixtures.guestCart(storeID: storeB)
 
-        let manager = makeManager(initialCarts: [activeA, sourceB])
+        let (manager, _) = makeSUT(initialCarts: [activeA, sourceB])
 
         _ = try await manager.reorder(from: sourceB.id)
 
@@ -358,7 +357,7 @@ struct CartManagerDomainTests {
         var guest = CartTestFixtures.guestCart(storeID: storeID)
         guest.status = .active
 
-        let manager = makeManager(initialCarts: [guest])
+        let (manager, _) = makeSUT(initialCarts: [guest])
 
         let migrated = try await manager.migrateGuestActiveCart(
             storeID: storeID,
@@ -383,7 +382,7 @@ struct CartManagerDomainTests {
         var guest = CartTestFixtures.guestCart(storeID: storeID)
         guest.status = .active
 
-        let manager = makeManager(initialCarts: [guest])
+        let (manager, _) = makeSUT(initialCarts: [guest])
 
         let migrated = try await manager.migrateGuestActiveCart(
             storeID: storeID,
@@ -422,7 +421,7 @@ struct CartManagerDomainTests {
         )
         profileCart.status = .active
 
-        let manager = makeManager(initialCarts: [guest, profileCart])
+        let (manager, _) = makeSUT(initialCarts: [guest, profileCart])
 
         await #expect(throws: CartError.self) {
             _ = try await manager.migrateGuestActiveCart(
@@ -442,7 +441,7 @@ struct CartManagerDomainTests {
     
     @Test
     func migrateGuestActiveCart_throwsConflict_whenNoActiveGuestCart() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
 
         await #expect(throws: CartError.self) {
             _ = try await manager.migrateGuestActiveCart(
@@ -470,7 +469,7 @@ struct CartManagerDomainTests {
             ]
         }
 
-        let manager = makeManager(detector: detector)
+        let (manager, _) = makeSUT(detector: detector)
         let cart = try await manager.setActiveCart(storeID: storeID)
 
         let item = CartItem(
@@ -487,11 +486,41 @@ struct CartManagerDomainTests {
         #expect(result.conflicts.count == 1)
     }
     
+    @Test
+    func addItem_reportsAllCatalogConflictKinds() async throws {
+        let storeID = StoreID(rawValue: "store_conflict_kinds")
+        
+        let detector = FakeCatalogConflictDetector { cart in
+            guard let item = cart.items.first else { return [] }
+            return [
+                CartCatalogConflict(itemID: item.id, productID: item.productID, kind: .removedFromCatalog),
+                CartCatalogConflict(itemID: item.id, productID: item.productID, kind: .priceChanged(old: Money(amount: 10, currencyCode: "USD"), new: Money(amount: 12, currencyCode: "USD"))),
+                CartCatalogConflict(itemID: item.id, productID: item.productID, kind: .insufficientStock(requested: 5, available: 0))
+            ]
+        }
+        
+        let (manager, _) = makeSUT(detector: detector)
+        let cart = try await manager.setActiveCart(storeID: storeID)
+        
+        let item = CartItem(
+            id: CartItemID.generate(),
+            productID: "burger",
+            quantity: 1,
+            unitPrice: Money(amount: 10, currencyCode: "USD"),
+            modifiers: [],
+            imageURL: nil
+        )
+        
+        let result = try await manager.addItem(to: cart.id, item: item)
+        
+        #expect(result.conflicts.count == 3)
+    }
+    
     // MARK: - Observers / change streams
 
     @Test
     func observeEvents_setActiveCart_emitsCreated_thenActiveCartChanged() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let stream = await manager.observeEvents()
         var it = makeEventIterator(stream)
 
@@ -507,7 +536,7 @@ struct CartManagerDomainTests {
 
     @Test
     func observeEvents_addItem_emitsCartUpdated() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_events_add_item")
         let cart = try await manager.setActiveCart(storeID: storeID)
 
@@ -531,7 +560,7 @@ struct CartManagerDomainTests {
 
     @Test
     func observeEvents_deleteActiveCart_emitsDeleted_thenActiveCartChangedNil() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_events_delete")
         let cart = try await manager.setActiveCart(storeID: storeID)
 
@@ -549,7 +578,7 @@ struct CartManagerDomainTests {
 
     @Test
     func observeEvents_updateStatus_activeToCheckedOut_emitsCartUpdated_thenActiveCartChangedNil() async throws {
-        let manager = makeManager()
+        let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_events_checkout")
         let profileID = UserProfileID(rawValue: "profile_events_checkout")
         let cart = try await manager.setActiveCart(storeID: storeID, profileID: profileID)
@@ -574,7 +603,7 @@ struct CartManagerDomainTests {
         var guest = CartTestFixtures.guestCart(storeID: storeID)
         guest.status = .active
 
-        let manager = makeManager(initialCarts: [guest])
+        let (manager, _) = makeSUT(initialCarts: [guest])
 
         let stream = await manager.observeEvents()
         var it = makeEventIterator(stream)
@@ -602,7 +631,7 @@ struct CartManagerDomainTests {
         var active = CartTestFixtures.guestCart(storeID: storeID)
         active.status = .active
         
-        let manager = makeManager(initialCarts: [active])
+        let (manager, _) = makeSUT(initialCarts: [active])
         
         let result = try await manager.cleanupCarts(
             storeID: storeID,
@@ -634,7 +663,7 @@ struct CartManagerDomainTests {
         expiredNew.status = .expired
         expiredNew.updatedAt = now.addingTimeInterval(-2 * 24 * 60 * 60) // 2 days ago
         
-        let manager = makeManager(initialCarts: [expiredOld, expiredNew])
+        let (manager, _) = makeSUT(initialCarts: [expiredOld, expiredNew])
         
         let result = try await manager.cleanupCarts(
             storeID: storeID,
@@ -670,7 +699,7 @@ struct CartManagerDomainTests {
         let c2 = makeNonActiveCart(daysAgo: 2, status: .cancelled)
         let c3 = makeNonActiveCart(daysAgo: 3, status: .checkedOut)  // oldest
         
-        let manager = makeManager(initialCarts: [c1, c2, c3])
+        let (manager, _) = makeSUT(initialCarts: [c1, c2, c3])
         
         let result = try await manager.cleanupCarts(
             storeID: storeID,
@@ -710,7 +739,7 @@ struct CartManagerDomainTests {
         expiredAProfile.status = .expired
         expiredAProfile.updatedAt = now.addingTimeInterval(-30 * 24 * 60 * 60)
         
-        let manager = makeManager(initialCarts: [expiredAGuest, expiredBGuest, expiredAProfile])
+        let (manager, _) = makeSUT(initialCarts: [expiredAGuest, expiredBGuest, expiredAProfile])
         
         _ = try await manager.cleanupCarts(
             storeID: storeA,
@@ -729,72 +758,36 @@ struct CartManagerDomainTests {
         #expect(try await manager.getCart(id: expiredBGuest.id) != nil) // different store
         #expect(try await manager.getCart(id: expiredAProfile.id) != nil) // different profile scope
     }
-}
-
-// MARK: - Test doubles
-
-private struct NoOpPricingEngine: CartPricingEngine, Sendable {
-    func computeTotals(
-        for cart: Cart,
-        context: CartPricingContext
-    ) async throws -> CartTotals {
-        CartTotals(
-            subtotal: Money(amount: 0, currencyCode: "USD"),
-            grandTotal: Money(amount: 0, currencyCode: "USD")
-        )
-    }
-}
-
-private struct NoOpPromotionEngine: PromotionEngine, Sendable {
-    func applyPromotions(
-        _ promotions: [PromotionKind],
-        to cartTotals: CartKitCore.CartTotals
-    ) async throws -> CartKitCore.CartTotals {
-        return cartTotals
-    }
-}
-
-private struct AllowAllValidationEngine: CartValidationEngine, Sendable {
-    func validate(cart: Cart) async -> CartValidationResult {
-        .valid
-    }
     
-    func validateItemChange(
-        in cart: Cart,
-        proposedItem: CartItem
-    ) async -> CartValidationResult {
-        .valid
-    }
-}
-
-private struct NoOpConflictResolver: CartConflictResolver, Sendable {
-    func resolveConflict(for cart: Cart, reason: CartError) async -> CartConflictResolution {
-        .acceptModifiedCart(cart)
-    }
-}
-
-private struct NoOpAnalyticsSink: CartAnalyticsSink, Sendable {
-    func cartCreated(_ cart: Cart) {}
-    func cartUpdated(_ cart: Cart) {}
-    func cartDeleted(id: CartID) {}
-    func activeCartChanged(
-        newActiveCartId: CartID?,
-        storeId: StoreID,
-        profileId: UserProfileID?
-    ) {}
-    func itemAdded(_ item: CartItem, in cart: Cart) {}
-    func itemUpdated(_ item: CartItem, in cart: Cart) {}
-    func itemRemoved(itemId: CartItemID, from cart: Cart) {}
-}
-
-private struct FakeCatalogConflictDetector: CartCatalogConflictDetector, Sendable {
-    let handler: @Sendable (Cart) -> [CartCatalogConflict]
+    //MARK: - Emits Analytics
     
-    init(_ handler: @escaping @Sendable (Cart) -> [CartCatalogConflict]) {
-        self.handler = handler
+    @Test
+    func setActiveCart_emitsAnalytics_activeCartChanged() async throws {
+        let (manager, support) = makeSUT()
+        let storeID = StoreID(rawValue: "store_analytics_active")
+        
+        let cart = try await manager.setActiveCart(storeID: storeID)
+        
+        let changes = support.analytics.activeChanges
+        #expect(changes.count == 1)
+        #expect(changes.first?.store == storeID)
+        #expect(changes.first?.profile == nil)
+        #expect(changes.first?.new == cart.id)
     }
-    
-    func detectConflicts(for cart: Cart) async -> [CartCatalogConflict] {
-        handler(cart)
+
+    @Test
+    func deleteActiveCart_emitsAnalytics_activeCartChangedNil() async throws {
+        let (manager, support) = makeSUT()
+        let storeID = StoreID(rawValue: "store_analytics_delete")
+        
+        let cart = try await manager.setActiveCart(storeID: storeID)
+        try await manager.deleteCart(id: cart.id)
+        
+        let changes = support.analytics.activeChanges
+        // One for setActiveCart, one for delete -> nil
+        #expect(changes.count == 2)
+        #expect(changes.last?.store == storeID)
+        #expect(changes.last?.profile == nil)
+        #expect(changes.last?.new == nil)
     }
 }
