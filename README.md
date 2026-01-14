@@ -4,6 +4,13 @@ A modular, local multi-cart SDK for iOS apps.
 
 CartKit lets you manage multiple carts per store and per user scope (guest or profile), with pluggable storage (Core Data, SwiftData, or your own) and configurable pricing / validation / promotion / conflict-resolution engines.
 
+**CartKit at a glance**
+- Local-first cart management (no networking)
+- Supports guest and profile carts
+- Multiple carts per store
+- Explicit composition and dependency injection
+- Pluggable storage and business policies
+
 > **Status:** WIP  
 > APIs and behavior may change until v1.0 is tagged.
 
@@ -20,6 +27,10 @@ CartKit lets you manage multiple carts per store and per user scope (guest or pr
 
 ## Modules
 
+- **CartKit**  
+  Umbrella module that re-exports `CartKitCore` with default storage integrations.  
+  Suitable for apps that want a simple, batteries-included setup.
+  
 - **CartKitCore**
   Domain types (`Cart`, `CartItem`, `Money`, `CartTotals`, etc.), `CartManager`, configuration, and extension-point protocols.
 
@@ -32,7 +43,8 @@ CartKit lets you manage multiple carts per store and per user scope (guest or pr
 - **CartKitTestingSupport**  
   Test helpers (in-memory store, fakes/spies) for unit and integration tests.
 
-Most apps import **`CartKitCore` ** in feature code and keep storage selection in the composition/DI layer.
+Most apps import **`CartKitCore`** in feature code and keep storage selection in the composition/DI layer.  
+Apps that prefer a simpler setup may import **`CartKit`** instead.
 
 ---
 
@@ -54,7 +66,8 @@ CartKit is designed around explicit composition at the application boundary.
 
 Applications are expected to assemble a `CartConfiguration` in their dependency-injection or composition layer. This configuration defines how carts behave, where they are stored, and which policies are applied.
 
-CartKit performs no implicit setup and relies on no global state.
+> CartKit performs no implicit setup and relies on no global state.
+> All behavior is defined through explicit configuration.
 
 ### Building a CartConfiguration
 
@@ -198,13 +211,12 @@ Engines are passed into `CartConfiguration`, making behavior explicit, testable,
 
 The pricing engine is responsible for computing cart totals based on the cart’s contents.
 
-Typical responsibilities include:
-
+**Typical responsibilities**
 - Subtotal calculation
-- Fee and tax inclusion (if applicable to your app)
+- Fee and tax inclusion (if applicable)
 - Final total computation
 
-Pricing is intentionally isolated so applications can:
+**Pricing is intentionally isolated so applications can**
 - Keep calculations consistent with backend rules
 - Swap pricing logic per market or experiment
 - Test totals deterministically
