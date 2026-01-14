@@ -87,6 +87,8 @@ Composition is intentionally explicit to ensure predictable behavior, testabilit
 
 Tests may bypass this builder and construct CartConfiguration directly.
 
+---
+
 ### Choosing configuration options
 
 Configuration decisions generally fall into two categories:
@@ -116,15 +118,19 @@ A cart is considered a guest cart when:
 
 `profileID == nil`
 
-Guest carts are local-only, not tied to a user account, and may later be migrated when a user authenticates.
+Guest carts are local-only, not tied to a user account, and can be migrated later when a user authenticates.
 
 There is no separate “guest cart” type. Guest behavior is a semantic interpretation, not a different model.
+
+---
 
 ### Profile carts
 
 A cart becomes a profile cart when it is associated with a non-nil `profileID`.
 
 Profile carts follow the same lifecycle rules as guest carts and differ only in ownership and scope.
+
+---
 
 ### One-active-cart rule
 
@@ -133,6 +139,8 @@ For a given `(storeID, profileID)` pair, only one cart may be active at a time.
 This invariant is enforced by `CartManager`, not by storage implementations.
 
 The rule ensures deterministic cart resolution and simplifies application-level state management.
+
+---
 
 ### Guest → profile migration
 
@@ -158,6 +166,8 @@ This keeps storage decisions out of the domain layer and avoids platform-specifi
 
 Applications are expected to resolve storage once at composition time.
 
+---
+
 ### iOS 15 vs iOS 17 guidance
 
 **CartKit provides two built-in storage implementations:**
@@ -174,11 +184,13 @@ SwiftData support lives in a separate module and is never selected implicitly.
 
 For applications supporting multiple OS versions, Core Data remains the safest default.
 
+---
+
 ### Custom storage
 
 Applications may provide their own `CartStore` implementation.
 
-Custom storage is useful when persistence is handled by an existing system, requires custom synchronization, or is intentionally ephemeral.
+Custom storage is useful when an existing system handles persistence, requires custom synchronization, or is intentionally ephemeral.
 
 Custom implementations must respect domain invariants but are otherwise unconstrained.
 
@@ -204,6 +216,8 @@ An engine is a protocol-backed component that encapsulates a specific business p
 
 Engines are passed into `CartConfiguration`, making behavior explicit, testable, and deterministic.
 
+---
+
 ### Pricing
 
 The pricing engine is responsible for computing cart totals based on the cart’s contents.
@@ -218,6 +232,8 @@ The pricing engine is responsible for computing cart totals based on the cart’
 - Swap pricing logic per market or experiment
 - Test totals deterministically
 
+---
+
 ### Validation
 
 The validation engine determines whether the cart is eligible for progression (for example, before checkout).
@@ -227,7 +243,9 @@ The validation engine determines whether the cart is eligible for progression (f
 - Cart-level rules (minimum order value, incompatible combinations, etc.)
 - Producing structured validation outcomes
 
-Validation is a key boundary: CartKit can manage carts for guests, but applications often require additional rules before checkout (for example, authentication or delivery availability). Those rules belong in validation policy, not in the domain entities themselves.
+Validation is a key boundary: CartKit can manage carts for guests, but applications often require additional rules before checkout (for example, authentication or delivery availability). Those rules belong in the validation policy, not in the domain entities themselves.
+
+---
 
 ### Promotions
 
@@ -239,6 +257,8 @@ Promotions are modeled as policy: how discounts/rewards are discovered, applied,
 - Updating applied promotions as cart contents change
 
 Promotion behavior varies significantly between products; keeping it behind an engine prevents domain model churn and supports A/B testing and regional rules.
+
+---
 
 ### Catalog conflict handling (client responsibility)
 
@@ -255,6 +275,8 @@ Promotion behavior varies significantly between products; keeping it behind an e
 
 This is intentionally client-owned because conflict strategy is product-specific and often UX-driven.
 
+---
+
 ### Analytics and logging as extension points
 
 CartKit emits domain-level signals (such as cart changes and lifecycle events) through dedicated sinks.
@@ -265,6 +287,8 @@ This keeps:
 - Event emission deterministic
 
 Applications can plug in their own analytics/logging implementations in the configuration layer without affecting the domain.
+
+---
 
 ### Practical guidance
 
@@ -294,6 +318,8 @@ Recommended testing principles:
 - Assert on domain outcomes, not side effects
 
 This approach aligns naturally with test-driven development (TDD).
+
+---
 
 ### Example: basic cart flow
 
