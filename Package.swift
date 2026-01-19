@@ -67,7 +67,7 @@ let package = Package(
                 "CartKitCore"
             ],
             resources: [
-                .process("Resources/CartStorage.momd")
+                .process("Resources/CartStorage.xcdatamodeld")
             ]
         ),
 

@@ -17,3 +17,6 @@ xcuserdata/
 
 # Credentials (if you ever put something here)
 .netrc
+
+*.mom
+*.momd/

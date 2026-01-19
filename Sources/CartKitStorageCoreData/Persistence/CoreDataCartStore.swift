@@ -112,13 +112,13 @@ public actor CoreDataCartStore {
             throw CoreDataCartStoreError.modelLoadFailed(modelName: modelName)
         }
         
-        // Force entity -> class mapping to the correct runtime types.
-        if let entity = model.entitiesByName["CDCart"] {
-            entity.managedObjectClassName = NSStringFromClass(CDCart.self)
-        }
-        
-        if let entity = model.entitiesByName["CDCartItem"] {
-            entity.managedObjectClassName = NSStringFromClass(CDCartItem.self)
+        // Fail-fast validation: ensure the model contains the new attribute.
+        guard
+            let cartEntity = model.entitiesByName["CDCart"],
+            cartEntity.attributesByName["sessionId"] != nil
+        else {
+            // Prefer a dedicated error if you have one; otherwise reuse modelLoadFailed.
+            throw CoreDataCartStoreError.modelLoadFailed(modelName: "\(modelName) (missing CDCart.sessionId)")
         }
         
         return model
