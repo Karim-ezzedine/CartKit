@@ -71,14 +71,26 @@ extension CoreDataCartStore: CartStore {
             
             var predicates: [NSPredicate] = []
             
-            // Scope: store
-            predicates.append(NSPredicate(format: "storeId == %@", query.storeID.rawValue))
-            
+            // Scope: store (optional)
+            if let storeID = query.storeID {
+                predicates.append(NSPredicate(format: "storeId == %@", storeID.rawValue))
+            }
+
             // Scope: profile (guest vs logged-in)
             if let profileID = query.profileID {
                 predicates.append(NSPredicate(format: "profileId == %@", profileID.rawValue))
             } else {
                 predicates.append(NSPredicate(format: "profileId == nil"))
+            }
+
+            // Scope: session (3-state)
+            switch query.session {
+            case .any:
+                break
+            case .sessionless:
+                predicates.append(NSPredicate(format: "sessionId == nil"))
+            case .session(let sessionID):
+                predicates.append(NSPredicate(format: "sessionId == %@", sessionID.rawValue))
             }
             
             // Optional status filter

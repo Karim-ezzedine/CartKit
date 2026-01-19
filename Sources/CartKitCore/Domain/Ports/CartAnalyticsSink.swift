@@ -18,7 +18,8 @@ public protocol CartAnalyticsSink: Sendable {
     func activeCartChanged(
         newActiveCartId: CartID?,
         storeId: StoreID,
-        profileId: UserProfileID?
+        profileId: UserProfileID?,
+        sessionId: CartSessionID?
     )
     
     // MARK: - Items
@@ -45,7 +46,8 @@ public struct NoOpCartAnalyticsSink: CartAnalyticsSink {
     public func activeCartChanged(
         newActiveCartId: CartID?,
         storeId: StoreID,
-        profileId: UserProfileID?
+        profileId: UserProfileID?,
+        sessionId: CartSessionID?
     ) {}
     
     public func itemAdded(_ item: CartItem, in cart: Cart) {}

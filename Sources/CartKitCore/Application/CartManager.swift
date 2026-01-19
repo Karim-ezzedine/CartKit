@@ -4,7 +4,7 @@ import Combine
 /// High-level facade / application service for working with carts.
 ///
 /// Responsibilities:
-/// - Enforce "one active cart per (storeID, profileID?)" at the API level
+/// - Enforce "one active cart per (storeID, profileID?, sessionID? )" at the API level
 /// - Orchestrate domain services (validation, promotions, pricing, conflicts).
 /// - Persist changes via CartStore and emit analytics events.
 ///
@@ -39,6 +39,7 @@ public actor CartManager {
     private func createCart(
         storeID: StoreID,
         profileID: UserProfileID? = nil,
+        sessionID: CartSessionID? = nil,
         displayName: String? = nil,
         context: String? = nil,
         storeImageURL: URL? = nil,
@@ -53,6 +54,7 @@ public actor CartManager {
             id: CartID.generate(),
             storeID: storeID,
             profileID: profileID,
+            sessionID: sessionID,
             items: [],
             status: status,
             createdAt: now,
@@ -75,10 +77,15 @@ public actor CartManager {
     @discardableResult
     public func setActiveCart(
         storeID: StoreID,
-        profileID: UserProfileID? = nil
+        profileID: UserProfileID? = nil,
+        sessionID: CartSessionID? = nil
     ) async throws -> Cart {
         // Try to find an existing active cart for this scope.
-        if let cart = try await getActiveCart(storeID: storeID, profileID: profileID) {
+        if let cart = try await getActiveCart(
+            storeID: storeID,
+            profileID: profileID,
+            sessionID: sessionID
+        ) {
             return cart
         }
         
@@ -86,18 +93,52 @@ public actor CartManager {
         let newCart = try await createCart(
             storeID: storeID,
             profileID: profileID,
+            sessionID: sessionID,
             status: .active
         )
         
         return newCart
     }
     
+    /// Returns active carts grouped by `sessionID` for the given profile (or guest).
+    ///
+    /// This is a discovery API used to support flows where multiple active checkout groups can exist
+    /// concurrently (e.g., GroupA, GroupB, GroupC). Each returned group contains only `.active` carts,
+    /// sorted by most recent activity, and groups are ordered by their latest `updatedAt`.
+    ///
+    /// - Parameter profileID: The user profile to fetch carts for. Pass `nil` to fetch guest carts.
+    /// - Returns: An array of `ActiveCartGroup` where each group corresponds to a `sessionID` (including `nil`),
+    ///            and contains the active carts in that group.
+    /// - Throws: Any error thrown by the underlying `CartStore`.
+    public func getActiveCartGroups(
+        profileID: UserProfileID? = nil
+    ) async throws -> [ActiveCartGroup] {
+        let query = CartQuery.activeAcrossStoresAndSessions(profileID: profileID)
+        let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
+
+        let grouped = Dictionary(grouping: carts, by: \.sessionID)
+
+        // Sort groups by latest updatedAt desc (so newest session group appears first)
+        let groups = grouped.map { (sessionID, carts) in
+            ActiveCartGroup(
+                sessionID: sessionID,
+                carts: carts.sorted { $0.updatedAt > $1.updatedAt }
+            )
+        }
+        .sorted {
+            ($0.carts.first?.updatedAt ?? .distantPast) > ($1.carts.first?.updatedAt ?? .distantPast)
+        }
+
+        return groups
+    }
+    
     /// Returns the active cart for a given scope, if any.
     public func getActiveCart(
         storeID: StoreID,
-        profileID: UserProfileID? = nil
+        profileID: UserProfileID? = nil,
+        sessionID: CartSessionID? = nil
     ) async throws -> Cart? {
-        let query = CartQuery.active(storeID: storeID, profileID: profileID)
+        let query = CartQuery.active(storeID: storeID, profileID: profileID, sessionID: sessionID)
         let carts = try await config.cartStore.fetchCarts(
             matching: query,
             limit: 1
@@ -160,7 +201,8 @@ public actor CartManager {
             signalActiveCartChanged(
                 storeID: updatedCart.storeID,
                 profileID: updatedCart.profileID,
-                newActiveCartID: nil
+                newActiveCartID: nil,
+                sessionId: updatedCart.sessionID
             )
         }
         
@@ -225,7 +267,8 @@ public actor CartManager {
             signalActiveCartChanged(
                 storeID: cart.storeID,
                 profileID: cart.profileID,
-                newActiveCartID: nil
+                newActiveCartID: nil,
+                sessionId: cart.sessionID
             )
         }
     }
@@ -239,33 +282,50 @@ public actor CartManager {
     public func reorder(from sourceCartID: CartID) async throws -> Cart {
         let source = try await loadCartOrThrow(sourceCartID)
         // Enforce one-active-per-scope by expiring the current active cart (if any)
-        try await expireActiveCartIfNeeded(storeID: source.storeID, profileID: source.profileID)
+        try await expireActiveCartIfNeeded(
+            storeID: source.storeID,
+            profileID: source.profileID,
+            sessionID: source.sessionID
+        )
         let newCart = makeActiveCartCopy(from: source, profileID: source.profileID)
         return try await persistNewCart(newCart, setAsActive: true)
     }
 
-    /// Migrates the active guest cart to a logged-in profile for a given store.
+    /// Migrates the active guest cart to a logged-in profile for a given store and session scope.
     ///
     /// Strategies:
     /// - `.move`: re-scopes the same cart to the profile (same `CartID`).
     /// - `.copyAndDelete`: creates a new profile cart copy and deletes the guest cart.
     ///
-    /// If the profile already has an active cart for the store, the migration fails with a conflict error.
+    /// If the profile already has an active cart for the store+session scope, the migration fails with a conflict error.
+    ///
+    /// - Important:
+    ///   - `.move` must emit `activeCartChanged` for both the old (guest) scope and the new (profile) scope,
+    ///     because the cart’s scope changes without deletion.
     public func migrateGuestActiveCart(
         storeID: StoreID,
         to profileID: UserProfileID,
-        strategy: GuestMigrationStrategy
+        strategy: GuestMigrationStrategy,
+        sessionID: CartSessionID? = nil
     ) async throws -> Cart {
 
-        // Find active guest cart
-        guard let guestActive = try await getActiveCart(storeID: storeID) else {
+        // Find active guest cart in this scope.
+        guard let guestActive = try await getActiveCart(
+            storeID: storeID,
+            profileID: nil,
+            sessionID: sessionID
+        ) else {
             throw CartError.conflict(
                 reason: "No active guest cart found for store \(storeID.rawValue)"
             )
         }
 
-        // Enforce invariant: profile must not already have an active cart
-        if try await getActiveCart(storeID: storeID, profileID: profileID) != nil {
+        // Enforce invariant: profile must not already have an active cart in the same scope.
+        if try await getActiveCart(
+            storeID: storeID,
+            profileID: profileID,
+            sessionID: sessionID
+        ) != nil {
             throw CartError.conflict(
                 reason: "Profile \(profileID.rawValue) already has an active cart for store \(storeID.rawValue)"
             )
@@ -273,10 +333,15 @@ public actor CartManager {
 
         switch strategy {
         case .move:
+            // Capture old scope (guest) before changing it.
+            let oldStoreID = guestActive.storeID
+            let oldSessionID = guestActive.sessionID   // should match sessionID input, but use the source of truth
+
             let moved = Cart(
                 id: guestActive.id,
                 storeID: guestActive.storeID,
                 profileID: profileID,
+                sessionID: guestActive.sessionID,
                 items: guestActive.items,
                 status: .active,
                 createdAt: guestActive.createdAt,
@@ -291,23 +356,36 @@ public actor CartManager {
 
             let saved = try await saveCartAfterMutation(moved)
 
+            // Old scope (guest) no longer has an active cart.
             signalActiveCartChanged(
-                storeID: storeID,
+                storeID: oldStoreID,
+                profileID: nil,
+                newActiveCartID: nil,
+                sessionId: oldSessionID
+            )
+
+            // New scope (profile) now has an active cart.
+            signalActiveCartChanged(
+                storeID: saved.storeID,
                 profileID: profileID,
-                newActiveCartID: saved.id
+                newActiveCartID: saved.id,
+                sessionId: saved.sessionID
             )
 
             return saved
 
         case .copyAndDelete:
+            // Copy strategy already emits:
+            // - persistNewCart(..., setAsActive: true) => activeCartChanged for the NEW profile scope
+            // - deleteCart(guestActive.id)            => activeCartChanged(nil) for the OLD guest scope
             let newCart = makeActiveCartCopy(from: guestActive, profileID: profileID)
             let saved = try await persistNewCart(newCart, setAsActive: true)
 
             try await deleteCart(id: guestActive.id)
-
             return saved
         }
     }
+
     
     // MARK: - Pricing
     
@@ -334,7 +412,8 @@ public actor CartManager {
         // If caller didn’t provide a context, build a plain one from the cart.
         let effectiveContext = context ?? .plain(
             storeID: cart.storeID,
-            profileID: cart.profileID
+            profileID: cart.profileID,
+            sessionID: cart.sessionID
         )
         
         let cartTotals = try await config.pricingEngine.computeTotals(
@@ -367,7 +446,8 @@ public actor CartManager {
     ) async throws -> CartTotals? {
         let cart = try await getActiveCart(
             storeID: context.storeID,
-            profileID: context.profileID
+            profileID: context.profileID,
+            sessionID: context.sessionID
         )
         
         guard let cart else { return nil }
@@ -527,21 +607,25 @@ public actor CartManager {
     /// - Never deletes `.active` carts.
     /// - Applies time-based deletion per status (using `updatedAt`).
     /// - Applies max-archived retention by keeping most-recent carts.
-    /// - Scope is always enforced (storeID + profileID?).
+    /// - Scope is always enforced (storeID + profileID? + sessionID?).
     public func cleanupCarts(
         storeID: StoreID,
         profileID: UserProfileID? = nil,
+        sessionID: CartSessionID? = nil,
         policy: CartLifecyclePolicy,
         now: Date = Date()
     ) async throws -> CartCleanupResult {
         
         // Fetch all carts in scope (any status), sorted by most-recent update.
+        let sessionFilter: CartQuery.SessionFilter = sessionID.map { .session($0) } ?? .sessionless
+
         let all = try await config.cartStore.fetchCarts(
             matching: CartQuery(
                 storeID: storeID,
                 profileID: profileID,
+                session: sessionFilter,
                 statuses: nil,
-                sort: .updatedAtDescending
+                sort: CartQuery.Sort.updatedAtDescending
             ),
             limit: nil
         )
@@ -598,7 +682,7 @@ public actor CartManager {
         }
         
         config.logger.log(
-            "Cleanup completed:\nstore=\(storeID.rawValue),\nprofile=\(profileID?.rawValue ?? "guest"),\ndeleted=\(deleted.count)"
+            "Cleanup completed:\nstore=\(storeID.rawValue),\nprofile=\(profileID?.rawValue ?? "guest"),\ndeleted=\(deleted.count),\nsessionID=\(sessionID?.rawValue ?? "nil")"
         )
         
         // Deterministic output
@@ -777,6 +861,7 @@ public actor CartManager {
             id: CartID.generate(),
             storeID: source.storeID,
             profileID: profileID,
+            sessionID: source.sessionID,
             items: cloneItemsRegeneratingIDs(from: source.items),
             status: .active,
             createdAt: now,
@@ -808,7 +893,8 @@ public actor CartManager {
             signalActiveCartChanged(
                 storeID: cart.storeID,
                 profileID: cart.profileID,
-                newActiveCartID: cart.id
+                newActiveCartID: cart.id,
+                sessionId: cart.sessionID
             )
         }
 
@@ -832,12 +918,13 @@ public actor CartManager {
     /// Expires the currently active cart for the given scope, if one exists.
     ///
     /// Used to enforce the invariant:
-    /// - Only one active cart per `(storeID, profileID)` scope.
+    /// - Only one active cart per `(storeID, profileID?, sessionID?)` scope.
     private func expireActiveCartIfNeeded(
         storeID: StoreID,
-        profileID: UserProfileID?
+        profileID: UserProfileID?,
+        sessionID: CartSessionID?
     ) async throws {
-        if let active = try await getActiveCart(storeID: storeID, profileID: profileID) {
+        if let active = try await getActiveCart(storeID: storeID, profileID: profileID, sessionID: sessionID) {
             var expired = active
             expired.status = .expired
             _ = try await saveCartAfterMutation(expired)
@@ -871,7 +958,7 @@ public actor CartManager {
         }
         
         config.logger.log(
-            "Catalog conflicts detected:\ncart=\(proposedCart.id.rawValue),\nstore=\(proposedCart.storeID.rawValue), profile=\(proposedCart.profileID?.rawValue ?? "guest"),\ncount=\(conflicts.count)"
+            "Catalog conflicts detected:\ncart=\(proposedCart.id.rawValue),\nstore=\(proposedCart.storeID.rawValue), profile=\(proposedCart.profileID?.rawValue ?? "guest"),\ncount=\(conflicts.count),\nsessionID= \(proposedCart.sessionID?.rawValue ?? "nil")"
         )
 
 
@@ -910,20 +997,23 @@ public actor CartManager {
     private func signalActiveCartChanged(
         storeID: StoreID,
         profileID: UserProfileID?,
-        newActiveCartID: CartID?
+        newActiveCartID: CartID?,
+        sessionId: CartSessionID?
     ) {
         config.analyticsSink.activeCartChanged(
             newActiveCartId: newActiveCartID,
             storeId: storeID,
-            profileId: profileID
+            profileId: profileID,
+            sessionId: sessionId
         )
         emit(.activeCartChanged(
             storeID: storeID,
             profileID: profileID,
+            sessionID: sessionId,
             cartID: newActiveCartID
         ))
         config.logger.log(
-            "Active cart changed:\nstore=\(storeID.rawValue),\nprofile=\(profileID?.rawValue ?? "guest"),\ncart=\(newActiveCartID?.rawValue ?? "nil")"
+            "Active cart changed:\nstore=\(storeID.rawValue),\nprofile=\(profileID?.rawValue ?? "guest"),\ncart=\(newActiveCartID?.rawValue ?? "nil"),\nsessionID=\(sessionId?.rawValue ?? "nil")"
         )
     }
 }

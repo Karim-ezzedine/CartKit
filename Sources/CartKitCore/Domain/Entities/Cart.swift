@@ -13,6 +13,11 @@ public struct Cart: Hashable, Codable, Sendable {
     /// Optional user profile. `nil` means guest cart.
     public let profileID: UserProfileID?
     
+    /// Optional checkout session identifier.
+    /// - `nil` =  single-store flow.
+    /// - non-nil = cart belongs to a multi-store unified checkout session.
+    public let sessionID: CartSessionID?
+    
     // MARK: - Contents
     
     public var items: [CartItem]
@@ -47,6 +52,7 @@ public struct Cart: Hashable, Codable, Sendable {
         id: CartID,
         storeID: StoreID,
         profileID: UserProfileID? = nil,
+        sessionID: CartSessionID? = nil,
         items: [CartItem] = [],
         status: CartStatus = .active,
         createdAt: Date = Date(),
@@ -61,6 +67,7 @@ public struct Cart: Hashable, Codable, Sendable {
         self.id = id
         self.storeID = storeID
         self.profileID = profileID
+        self.sessionID = sessionID
         self.items = items
         self.status = status
         self.createdAt = createdAt

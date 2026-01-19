@@ -4,9 +4,14 @@ public enum CartEvent: Sendable, Equatable {
     case cartCreated(CartID)
     case cartUpdated(CartID)
     case cartDeleted(CartID)
-
+    
     /// Active cart changed for a specific scope.
-    case activeCartChanged(storeID: StoreID, profileID: UserProfileID?, cartID: CartID?)
+    case activeCartChanged(
+        storeID: StoreID,
+        profileID: UserProfileID?,
+        sessionID: CartSessionID?,
+        cartID: CartID?
+    )
 }
 
 // MARK: - Use case example

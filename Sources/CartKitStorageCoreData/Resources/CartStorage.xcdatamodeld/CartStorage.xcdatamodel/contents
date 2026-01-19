@@ -10,6 +10,7 @@
         <attribute name="minSubtotalAmount" optional="YES" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="minSubtotalCurrencyCode" optional="YES" attributeType="String"/>
         <attribute name="profileId" optional="YES" attributeType="String"/>
+        <attribute name="sessionId" optional="YES" attributeType="String"/>
         <attribute name="status" attributeType="String"/>
         <attribute name="storeId" attributeType="String"/>
         <attribute name="storeImageURL" optional="YES" attributeType="String"/>

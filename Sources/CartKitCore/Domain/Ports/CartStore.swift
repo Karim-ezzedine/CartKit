@@ -4,38 +4,48 @@
 /// - `storeID` is always required.
 /// - `profileID == nil` means "guest carts for this store".
 /// - `profileID != nil` means "carts for that profile in this store".
+/// - `sessionID == nil` means "do not filter by session".
+/// - `sessionID != nil` filters carts belonging to that session.
 /// - `statuses == nil` means "any status".
 /// - `statuses != nil` filters by the given statuses.
 /// - `sort` controls ordering of the returned array.
 public struct CartQuery: Hashable, Codable, Sendable {
     
+    public enum SessionFilter: Hashable, Codable, Sendable {
+        /// Do not filter by session (returns carts for any session, including nil).
+        case any
+        /// Only sessionless carts (sessionId == nil).
+        case sessionless
+        /// Only carts in the given session.
+        case session(CartSessionID)
+    }
+    
     public enum Sort: String, Hashable, Codable, Sendable {
-        /// Oldest carts first (by createdAt)
         case createdAtAscending
-        
-        /// Newest carts first (by createdAt)
         case createdAtDescending
-        
-        /// Least recently updated first
         case updatedAtAscending
-        
-        /// Most recently updated first (default)
         case updatedAtDescending
     }
     
-    public let storeID: StoreID
+    /// Optional store scope:
+    /// - nil => any store
+    /// - non-nil => only that store
+    public let storeID: StoreID?
     public let profileID: UserProfileID?
+    public let session: SessionFilter
     public let statuses: Set<CartStatus>?
     public let sort: Sort
     
     public init(
-        storeID: StoreID,
+        storeID: StoreID?,
         profileID: UserProfileID? = nil,
+        session: SessionFilter = .sessionless,
         statuses: Set<CartStatus>? = nil,
         sort: Sort = .updatedAtDescending
     ) {
         self.storeID = storeID
         self.profileID = profileID
+        self.session = session
         self.statuses = statuses
         self.sort = sort
     }
@@ -43,11 +53,26 @@ public struct CartQuery: Hashable, Codable, Sendable {
     /// Convenience for querying active carts only.
     public static func active(
         storeID: StoreID,
-        profileID: UserProfileID?
+        profileID: UserProfileID?,
+        sessionID: CartSessionID? = nil
     ) -> CartQuery {
         CartQuery(
             storeID: storeID,
             profileID: profileID,
+            session: sessionID.map(SessionFilter.session) ?? .sessionless,
+            statuses: [.active],
+            sort: .updatedAtDescending
+        )
+    }
+    
+    /// discover all active carts for a profile across stores & sessions.
+    public static func activeAcrossStoresAndSessions(
+        profileID: UserProfileID?
+    ) -> CartQuery {
+        CartQuery(
+            storeID: nil,
+            profileID: profileID,
+            session: .any,
             statuses: [.active],
             sort: .updatedAtDescending
         )

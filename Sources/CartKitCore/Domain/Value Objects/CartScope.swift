@@ -9,15 +9,17 @@
 public struct CartScopeKey: Hashable, Codable, Sendable {
     public let storeID: StoreID
     public let profileID: UserProfileID?
+    public let sessionID: CartSessionID?
 
-    public init(storeID: StoreID, profileID: UserProfileID?) {
+    public init(storeID: StoreID, profileID: UserProfileID?, sessionID: CartSessionID?) {
         self.storeID = storeID
         self.profileID = profileID
+        self.sessionID = sessionID
     }
 
     /// Convenience constructor for a guest scope (no profile).
-    public static func guest(storeID: StoreID) -> CartScopeKey {
-        CartScopeKey(storeID: storeID, profileID: nil)
+    public static func guest(storeID: StoreID, sessionID: CartSessionID? = nil) -> CartScopeKey {
+        CartScopeKey(storeID: storeID, profileID: nil, sessionID: sessionID)
     }
 
     /// `true` when this scope represents a guest (no profile attached).
@@ -33,7 +35,7 @@ public extension Cart {
     /// This is what `CartManager` and storage implementations will
     /// use to enforce "one active cart per store/profile combination".
     var scopeKey: CartScopeKey {
-        CartScopeKey(storeID: storeID, profileID: profileID)
+        CartScopeKey(storeID: storeID, profileID: profileID, sessionID: sessionID)
     }
 }
 

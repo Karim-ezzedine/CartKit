@@ -3,56 +3,6 @@ import Testing
 @testable import CartKitCore
 import CartKitTestingSupport
 
-/// Simple spy analytics sink for testing CartManager integration.
-///
-/// Not thread-safe in a general sense, but fine for sequential test usage.
-final class SpyCartAnalyticsSink: CartAnalyticsSink, @unchecked Sendable {
-    
-    private(set) var createdCarts: [Cart] = []
-    private(set) var updatedCarts: [Cart] = []
-    private(set) var deletedCartIDs: [CartID] = []
-    private(set) var activeCartChanges: [(CartID?, StoreID, UserProfileID?)] = []
-    
-    private(set) var addedItems: [(CartItem, Cart)] = []
-    private(set) var updatedItems: [(CartItem, Cart)] = []
-    private(set) var removedItems: [(CartItemID, Cart)] = []
-    
-    func cartCreated(_ cart: Cart) {
-        createdCarts.append(cart)
-    }
-    
-    func cartUpdated(_ cart: Cart) {
-        updatedCarts.append(cart)
-    }
-    
-    func cartDeleted(id: CartID) {
-        deletedCartIDs.append(id)
-    }
-    
-    func activeCartChanged(
-        newActiveCartId: CartID?,
-        storeId: StoreID,
-        profileId: UserProfileID?
-    ) {
-        activeCartChanges.append((newActiveCartId, storeId, profileId))
-    }
-    
-    func itemAdded(_ item: CartItem, in cart: Cart) {
-        addedItems.append((item, cart))
-    }
-    
-    func itemUpdated(_ item: CartItem, in cart: Cart) {
-        updatedItems.append((item, cart))
-    }
-    
-    func itemRemoved(
-        itemId: CartItemID,
-        from cart: Cart
-    ) {
-        removedItems.append((itemId, cart))
-    }
-}
-
 struct CartManagerAnalyticsIntegrationTests {
     
     private func makeManager(
@@ -116,8 +66,8 @@ struct CartManagerAnalyticsIntegrationTests {
         // activeCartChanged with nil newActiveCartId after deleting an active cart
         #expect(
             analytics.activeCartChanges.contains(where: { change in
-                let (newActiveID, sID, pID) = change
-                return newActiveID == nil && sID == cart.storeID && pID == cart.profileID
+                let (newActiveID, sID, pID, sessionID) = change
+                return newActiveID == nil && sID == cart.storeID && pID == cart.profileID && sessionID == cart.sessionID
             })
         )
     }

@@ -53,6 +53,21 @@ public struct CartItemID: Hashable, Codable, Sendable {
     }
 }
 
+/// Strongly-typed identifier for a cart checkout session.
+///
+/// Multiple store-scoped carts can share the same `sessionID` to indicate
+/// they belong to the same unified checkout.
+public struct CartSessionID: Hashable, Codable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    public init(_ rawValue: String) {
+        self.rawValue = rawValue
+    }
+}
 
 // MARK: - ID helpers
 
@@ -70,3 +85,9 @@ public extension CartItemID {
     }
 }
 
+public extension CartSessionID {
+    /// Generate a new session ID using a UUID.
+    static func generate() -> CartSessionID {
+        CartSessionID(UUID().uuidString)
+    }
+}

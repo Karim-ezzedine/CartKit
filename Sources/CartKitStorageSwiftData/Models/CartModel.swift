@@ -19,6 +19,9 @@ public final class CartModel {
 
     /// Domain: UserProfileID?.rawValue (nil = guest)
     public var profileId: String?
+    
+    /// Domain: CartSessionID?.rawValue (nil = one cart per session)
+    public var sessionId: String?
 
     // MARK: - State
 
@@ -59,6 +62,7 @@ public final class CartModel {
         id: String,
         storeId: String,
         profileId: String? = nil,
+        sessionId: String? = nil,
         status: String,
         createdAt: Date,
         updatedAt: Date,
@@ -74,6 +78,7 @@ public final class CartModel {
         self.id = id
         self.storeId = storeId
         self.profileId = profileId
+        self.sessionId = sessionId
         self.status = status
         self.createdAt = createdAt
         self.updatedAt = updatedAt

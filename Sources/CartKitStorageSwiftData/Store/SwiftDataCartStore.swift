@@ -96,6 +96,7 @@ public actor SwiftDataCartStore: CartStore {
     private func apply(_ cart: Cart, to model: CartModel, in context: ModelContext) {
         model.storeId = cart.storeID.rawValue
         model.profileId = cart.profileID?.rawValue
+        model.sessionId = cart.sessionID?.rawValue
         model.status = cart.status.rawValue
         model.createdAt = cart.createdAt
         model.updatedAt = cart.updatedAt
@@ -118,57 +119,99 @@ public actor SwiftDataCartStore: CartStore {
     }
     
     private func makeDescriptor(for query: CartQuery, limit: Int?) -> FetchDescriptor<CartModel> {
-
-        let storeRaw = query.storeID.rawValue
+        
+        let storeRaw: String? = query.storeID?.rawValue
         let profileRaw: String? = query.profileID?.rawValue
-        let statusRaw: Set<String>? = query.statuses.map { Set($0.map(\.rawValue)) }
-
+        
+        enum SessionMode {
+            case any
+            case sessionless
+            case session(String)
+        }
+        
+        let sessionMode: SessionMode = {
+            switch query.session {
+            case .any: return .any
+            case .sessionless: return .sessionless
+            case .session(let id): return .session(id.rawValue)
+            }
+        }()
+        
+        let statusRaw: Set<String>? = {
+            guard let statuses = query.statuses, !statuses.isEmpty else { return nil }
+            return Set(statuses.map(\.rawValue))
+        }()
+        
+        // Helpers expressed as inline boolean expressions, not functions.
+        // We materialize the store/session constraints as flags and raw values.
+        let shouldFilterStore = (storeRaw != nil)
+        
+        let shouldFilterSession: Bool
+        let sessionRaw: String?
+        switch sessionMode {
+        case .any:
+            shouldFilterSession = false
+            sessionRaw = nil
+        case .sessionless:
+            shouldFilterSession = true
+            sessionRaw = nil
+        case .session(let raw):
+            shouldFilterSession = true
+            sessionRaw = raw
+        }
+        
         let descriptor: FetchDescriptor<CartModel>
-
+        
         if let statusRaw {
-
             if let profileRaw {
                 descriptor = FetchDescriptor<CartModel>(
                     predicate: #Predicate<CartModel> { cart in
-                        cart.storeId == storeRaw &&
+                        // Store (optional)
+                        (!shouldFilterStore || cart.storeId == storeRaw!) &&
+                        // Profile (logged in)
                         cart.profileId == profileRaw &&
+                        // Session (any/sessionless/specific)
+                        (!shouldFilterSession || cart.sessionId == sessionRaw) &&
+                        // Status
                         statusRaw.contains(cart.status)
                     }
                 )
             } else {
                 descriptor = FetchDescriptor<CartModel>(
                     predicate: #Predicate<CartModel> { cart in
-                        cart.storeId == storeRaw &&
+                        (!shouldFilterStore || cart.storeId == storeRaw!) &&
+                        // Guest
                         cart.profileId == nil &&
+                        (!shouldFilterSession || cart.sessionId == sessionRaw) &&
                         statusRaw.contains(cart.status)
                     }
                 )
             }
-
         } else {
-
             if let profileRaw {
                 descriptor = FetchDescriptor<CartModel>(
                     predicate: #Predicate<CartModel> { cart in
-                        cart.storeId == storeRaw &&
-                        cart.profileId == profileRaw
+                        (!shouldFilterStore || cart.storeId == storeRaw!) &&
+                        cart.profileId == profileRaw &&
+                        (!shouldFilterSession || cart.sessionId == sessionRaw)
                     }
                 )
             } else {
                 descriptor = FetchDescriptor<CartModel>(
                     predicate: #Predicate<CartModel> { cart in
-                        cart.storeId == storeRaw &&
-                        cart.profileId == nil
+                        (!shouldFilterStore || cart.storeId == storeRaw!) &&
+                        cart.profileId == nil &&
+                        (!shouldFilterSession || cart.sessionId == sessionRaw)
                     }
                 )
             }
         }
-
+        
         var mutable = descriptor
         mutable.sortBy = sortDescriptors(for: query.sort)
-
+        
         if let limit { mutable.fetchLimit = max(0, limit) }
-
+        
         return mutable
     }
     

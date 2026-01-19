@@ -32,6 +32,7 @@ public enum CartTestFixtures {
     /// Guest cart (no profile) with a couple of simple items.
     public static func guestCart(
         storeID: StoreID = demoStoreID,
+        sessionID: CartSessionID? = nil,
         now: Date = Date()
     ) -> Cart {
         let item1 = CartItem(
@@ -56,6 +57,7 @@ public enum CartTestFixtures {
             id: CartID.generate(),
             storeID: storeID,
             profileID: nil,
+            sessionID: sessionID,
             items: [item1, item2],
             status: .active,
             createdAt: now.addingTimeInterval(-1800), // 30 min ago
@@ -71,6 +73,7 @@ public enum CartTestFixtures {
     public static func loggedInCart(
         storeID: StoreID = demoStoreID,
         profileID: UserProfileID = demoProfileID,
+        sessionID: CartSessionID? = nil,
         now: Date = Date()
     ) -> Cart {
         let item = CartItem(
@@ -86,6 +89,7 @@ public enum CartTestFixtures {
             id: CartID.generate(),
             storeID: storeID,
             profileID: profileID,
+            sessionID: sessionID,
             items: [item],
             status: .active,
             createdAt: now.addingTimeInterval(-3600), // 1 hour ago

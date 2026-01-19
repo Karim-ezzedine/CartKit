@@ -204,6 +204,103 @@ struct CartManagerDomainTests {
         #expect(fetchedProfile?.id == profileCart.id)
     }
     
+    //MARK: - Active Carts Group
+    
+    @Test
+    func setActiveCart_allowsMultipleActiveCarts_forSameStoreAndProfile_whenSessionDiffers() async throws {
+        let (manager, _) = makeSUT()
+        let storeID = StoreID("store_session_scope")
+        let profileID = UserProfileID("profile_session_scope")
+
+        let s1 = CartSessionID("session_A")
+        let s2 = CartSessionID("session_B")
+
+        let c1 = try await manager.setActiveCart(storeID: storeID, profileID: profileID, sessionID: s1)
+        let c2 = try await manager.setActiveCart(storeID: storeID, profileID: profileID, sessionID: s2)
+
+        #expect(c1.id != c2.id)
+
+        let fetched1 = try await manager.getActiveCart(storeID: storeID, profileID: profileID, sessionID: s1)
+        let fetched2 = try await manager.getActiveCart(storeID: storeID, profileID: profileID, sessionID: s2)
+
+        #expect(fetched1?.id == c1.id)
+        #expect(fetched2?.id == c2.id)
+    }
+    
+    @Test
+    func setActiveCart_reusesExistingActive_forSameStoreProfileAndSession() async throws {
+        let (manager, _) = makeSUT()
+        let storeID = StoreID("store_session_reuse")
+        let profileID = UserProfileID("profile_session_reuse")
+        let sessionID = CartSessionID("session_reuse")
+
+        let first = try await manager.setActiveCart(storeID: storeID, profileID: profileID, sessionID: sessionID)
+        let second = try await manager.setActiveCart(storeID: storeID, profileID: profileID, sessionID: sessionID)
+
+        #expect(first.id == second.id)
+    }
+    
+    @Test
+    func getActiveCartGroups_groupsBySessionID_includingNil() async throws {
+        let profileID = UserProfileID("profile_groups")
+        let sA = CartSessionID("session_A")
+        let sB = CartSessionID("session_B")
+
+        let store1 = StoreID("store_1")
+        let store2 = StoreID("store_2")
+        let store3 = StoreID("store_3")
+        let store4 = StoreID("store_4")
+
+        var a1 = CartTestFixtures.loggedInCart(storeID: store1, profileID: profileID, sessionID: sA)
+        a1.status = .active
+
+        var a2 = CartTestFixtures.loggedInCart(storeID: store2, profileID: profileID, sessionID: sA)
+        a2.status = .active
+
+        var b1 = CartTestFixtures.loggedInCart(storeID: store3, profileID: profileID, sessionID: sB)
+        b1.status = .active
+
+        var nil1 = CartTestFixtures.loggedInCart(storeID: store4, profileID: profileID, sessionID: nil)
+        nil1.status = .active
+
+        let (manager, _) = makeSUT(initialCarts: [a1, a2, b1, nil1])
+
+        let groups = try await manager.getActiveCartGroups(profileID: profileID)
+
+        // Expect 3 groups: session_A, session_B, nil
+        let sessionIDs = groups.map(\.sessionID)
+        #expect(sessionIDs.contains(sA))
+        #expect(sessionIDs.contains(sB))
+        #expect(sessionIDs.contains(nil))
+
+        // Validate each group only contains active carts of the same session
+        for g in groups {
+            #expect(g.carts.allSatisfy { $0.status == .active })
+            #expect(g.carts.allSatisfy { $0.sessionID == g.sessionID })
+        }
+    }
+
+    @Test
+    func getActiveCartGroups_whenGuest_groupsGuestActiveCarts() async throws {
+        let sA = CartSessionID("session_guest_A")
+        let store1 = StoreID("store_guest_1")
+        let store2 = StoreID("store_guest_2")
+
+        var c1 = CartTestFixtures.guestCart(storeID: store1, sessionID: sA)
+        c1.status = .active
+
+        var c2 = CartTestFixtures.guestCart(storeID: store2, sessionID: sA)
+        c2.status = .active
+
+        let (manager, _) = makeSUT(initialCarts: [c1, c2])
+
+        let groups = try await manager.getActiveCartGroups(profileID: nil)
+
+        #expect(groups.count == 1)
+        #expect(groups.first?.sessionID == sA)
+        #expect(groups.first?.carts.count == 2)
+    }
+
     //MARK: - Get Cart Tests
     
     @Test
@@ -353,8 +450,9 @@ struct CartManagerDomainTests {
     func migrateGuestActiveCart_move_rescopesSameCart() async throws {
         let storeID = StoreID("store_move")
         let profileID = UserProfileID("profile_1")
+        let sessionID = CartSessionID("session_1")
 
-        var guest = CartTestFixtures.guestCart(storeID: storeID)
+        var guest = CartTestFixtures.guestCart(storeID: storeID, sessionID: sessionID)
         guest.status = .active
 
         let (manager, _) = makeSUT(initialCarts: [guest])
@@ -362,7 +460,8 @@ struct CartManagerDomainTests {
         let migrated = try await manager.migrateGuestActiveCart(
             storeID: storeID,
             to: profileID,
-            strategy: .move
+            strategy: .move,
+            sessionID: sessionID
         )
 
         #expect(migrated.id == guest.id)
@@ -370,7 +469,7 @@ struct CartManagerDomainTests {
         #expect(migrated.status == .active)
 
         // Guest scope should now be empty
-        let guestActive = try await manager.getActiveCart(storeID: storeID, profileID: nil)
+        let guestActive = try await manager.getActiveCart(storeID: storeID, profileID: nil, sessionID: sessionID)
         #expect(guestActive == nil)
     }
 
@@ -378,8 +477,9 @@ struct CartManagerDomainTests {
     func migrateGuestActiveCart_copyAndDelete_createsNewProfileCart_andDeletesGuest() async throws {
         let storeID = StoreID("store_copy")
         let profileID = UserProfileID("profile_2")
+        let sessionID = CartSessionID("session_2")
 
-        var guest = CartTestFixtures.guestCart(storeID: storeID)
+        var guest = CartTestFixtures.guestCart(storeID: storeID, sessionID: sessionID)
         guest.status = .active
 
         let (manager, _) = makeSUT(initialCarts: [guest])
@@ -387,7 +487,8 @@ struct CartManagerDomainTests {
         let migrated = try await manager.migrateGuestActiveCart(
             storeID: storeID,
             to: profileID,
-            strategy: .copyAndDelete
+            strategy: .copyAndDelete,
+            sessionID: sessionID
         )
 
         #expect(migrated.id != guest.id)
@@ -411,13 +512,15 @@ struct CartManagerDomainTests {
     func migrateGuestActiveCart_throwsConflict_whenProfileHasActiveCart() async throws {
         let storeID = StoreID("store_conflict")
         let profileID = UserProfileID("profile_conflict")
+        let sessionID = CartSessionID("session_conflict")
 
-        var guest = CartTestFixtures.guestCart(storeID: storeID)
+        var guest = CartTestFixtures.guestCart(storeID: storeID, sessionID: sessionID)
         guest.status = .active
 
         var profileCart = CartTestFixtures.loggedInCart(
             storeID: storeID,
-            profileID: profileID
+            profileID: profileID,
+            sessionID: sessionID
         )
         profileCart.status = .active
 
@@ -427,7 +530,8 @@ struct CartManagerDomainTests {
             _ = try await manager.migrateGuestActiveCart(
                 storeID: storeID,
                 to: profileID,
-                strategy: .move
+                strategy: .move,
+                sessionID: sessionID
             )
         }
 
@@ -447,11 +551,44 @@ struct CartManagerDomainTests {
             _ = try await manager.migrateGuestActiveCart(
                 storeID: StoreID("store_none"),
                 to: UserProfileID("profile_none"),
-                strategy: .move
+                strategy: .move,
+                sessionID: CartSessionID("session_none")
             )
         }
     }
     
+    @Test
+    func migrateGuestActiveCart_move_clearsGuestScope_andSetsProfileScopeActive() async throws {
+        let storeID = StoreID("store_move_scopes")
+        let profileID = UserProfileID("profile_move_scopes")
+        let sessionID = CartSessionID("session_move_scopes")
+
+        var guest = CartTestFixtures.guestCart(storeID: storeID, sessionID: sessionID)
+        guest.status = .active
+
+        let (manager, _) = makeSUT(initialCarts: [guest])
+
+        let migrated = try await manager.migrateGuestActiveCart(
+            storeID: storeID,
+            to: profileID,
+            strategy: .move,
+            sessionID: sessionID
+        )
+
+        // Same cart id, now profile-scoped
+        #expect(migrated.id == guest.id)
+        #expect(migrated.profileID == profileID)
+        #expect(migrated.sessionID == sessionID)
+
+        // Guest active cart for that scope is gone
+        let guestActive = try await manager.getActiveCart(storeID: storeID, profileID: nil, sessionID: sessionID)
+        #expect(guestActive == nil)
+
+        // Profile active cart for that scope exists and is the migrated cart
+        let profileActive = try await manager.getActiveCart(storeID: storeID, profileID: profileID, sessionID: sessionID)
+        #expect(profileActive?.id == migrated.id)
+    }
+
     //MARK: - Reports Conflicts
     
     @Test
@@ -531,7 +668,7 @@ struct CartManagerDomainTests {
         let e2 = await nextEvent(&it)
 
         #expect(e1 == .cartCreated(cart.id))
-        #expect(e2 == .activeCartChanged(storeID: storeID, profileID: nil, cartID: cart.id))
+        #expect(e2 == .activeCartChanged(storeID: storeID, profileID: nil, sessionID: nil, cartID: cart.id))
     }
 
     @Test
@@ -573,7 +710,7 @@ struct CartManagerDomainTests {
         let e2 = await nextEvent(&it)
 
         #expect(e1 == .cartDeleted(cart.id))
-        #expect(e2 == .activeCartChanged(storeID: storeID, profileID: nil, cartID: nil))
+        #expect(e2 == .activeCartChanged(storeID: storeID, profileID: nil, sessionID: nil, cartID: nil))
     }
 
     @Test
@@ -581,7 +718,8 @@ struct CartManagerDomainTests {
         let (manager, _) = makeSUT()
         let storeID = StoreID(rawValue: "store_events_checkout")
         let profileID = UserProfileID(rawValue: "profile_events_checkout")
-        let cart = try await manager.setActiveCart(storeID: storeID, profileID: profileID)
+        let sessionID = CartSessionID(rawValue: "session_events_checkout")
+        let cart = try await manager.setActiveCart(storeID: storeID, profileID: profileID, sessionID: sessionID)
 
         let stream = await manager.observeEvents()
         var it = makeEventIterator(stream)
@@ -592,15 +730,16 @@ struct CartManagerDomainTests {
         let e2 = await nextEvent(&it)
 
         #expect(e1 == .cartUpdated(cart.id))
-        #expect(e2 == .activeCartChanged(storeID: storeID, profileID: profileID, cartID: nil))
+        #expect(e2 == .activeCartChanged(storeID: storeID, profileID: profileID, sessionID: sessionID, cartID: nil))
     }
 
     @Test
     func observeEvents_migrateGuestMove_emitsCartUpdated_thenActiveCartChangedForProfile() async throws {
         let storeID = StoreID("store_events_migrate_move")
         let profileID = UserProfileID("profile_events_migrate_move")
+        let sessionID = CartSessionID("session_events_migrate_move")
 
-        var guest = CartTestFixtures.guestCart(storeID: storeID)
+        var guest = CartTestFixtures.guestCart(storeID: storeID, sessionID: sessionID)
         guest.status = .active
 
         let (manager, _) = makeSUT(initialCarts: [guest])
@@ -611,15 +750,31 @@ struct CartManagerDomainTests {
         let migrated = try await manager.migrateGuestActiveCart(
             storeID: storeID,
             to: profileID,
-            strategy: .move
+            strategy: .move,
+            sessionID: sessionID
         )
 
-        // `.move` uses `saveCartAfterMutation` then emits activeCartChanged for profile.
         let e1 = await nextEvent(&it)
         let e2 = await nextEvent(&it)
+        let e3 = await nextEvent(&it)
 
         #expect(e1 == .cartUpdated(migrated.id))
-        #expect(e2 == .activeCartChanged(storeID: storeID, profileID: profileID, cartID: migrated.id))
+
+        // Guest scope is cleared first (same store + same session).
+        #expect(e2 == .activeCartChanged(
+            storeID: storeID,
+            profileID: nil,
+            sessionID: sessionID,
+            cartID: nil
+        ))
+
+        // Then profile scope becomes active.
+        #expect(e3 == .activeCartChanged(
+            storeID: storeID,
+            profileID: profileID,
+            sessionID: sessionID,
+            cartID: migrated.id
+        ))
     }
 
     // MARK: - Lifecycle / Cleanup
@@ -768,11 +923,11 @@ struct CartManagerDomainTests {
         
         let cart = try await manager.setActiveCart(storeID: storeID)
         
-        let changes = support.analytics.activeChanges
+        let changes = support.analytics.activeCartChanges
         #expect(changes.count == 1)
-        #expect(changes.first?.store == storeID)
-        #expect(changes.first?.profile == nil)
-        #expect(changes.first?.new == cart.id)
+        #expect(changes.first?.1 == storeID)
+        #expect(changes.first?.2 == nil)
+        #expect(changes.first?.0 == cart.id)
     }
 
     @Test
@@ -783,11 +938,11 @@ struct CartManagerDomainTests {
         let cart = try await manager.setActiveCart(storeID: storeID)
         try await manager.deleteCart(id: cart.id)
         
-        let changes = support.analytics.activeChanges
+        let changes = support.analytics.activeCartChanges
         // One for setActiveCart, one for delete -> nil
         #expect(changes.count == 2)
-        #expect(changes.last?.store == storeID)
-        #expect(changes.last?.profile == nil)
-        #expect(changes.last?.new == nil)
+        #expect(changes.last?.1 == storeID)
+        #expect(changes.last?.2 == nil)
+        #expect(changes.last?.0 == nil)
     }
 }

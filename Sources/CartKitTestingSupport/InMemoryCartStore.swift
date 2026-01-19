@@ -44,18 +44,30 @@ public actor InMemoryCartStore: CartStore {
         // Start from all carts as an Array
         var result = Array(cartsByID.values)
         
-        // Filter by store.
-        result = result.filter { $0.storeID == query.storeID }
-        
+        // Filter by store (optional: nil means any store)
+        if let storeID = query.storeID {
+            result = result.filter { $0.storeID == storeID }
+        }
+
         // Filter by profile (guest vs logged-in)
         if let profileID = query.profileID {
             result = result.filter { $0.profileID == profileID }
         } else {
             result = result.filter { $0.profileID == nil }
         }
-        
-        // Filter by status set, if provided
-        if let statuses = query.statuses {
+
+        // Filter by session (3-state)
+        switch query.session {
+        case .any:
+            break
+        case .sessionless:
+            result = result.filter { $0.sessionID == nil }
+        case .session(let sessionID):
+            result = result.filter { $0.sessionID == sessionID }
+        }
+
+        // Filter by status set, if provided (treat empty as no filter, consistent with adapters)
+        if let statuses = query.statuses, !statuses.isEmpty {
             result = result.filter { statuses.contains($0.status) }
         }
         

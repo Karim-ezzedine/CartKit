@@ -4,57 +4,52 @@ import CartKitCore
 /// Captures analytics calls for assertions in tests.
 public final class SpyCartAnalyticsSink: CartAnalyticsSink, @unchecked Sendable {
 
-    private let lock = NSLock()
+    public private(set) var createdCarts: [Cart] = []
+    public private(set) var updatedCarts: [Cart] = []
+    public private(set) var deletedCartIDs: [CartID] = []
 
-    public private(set) var created: [CartID] = []
-    public private(set) var updated: [CartID] = []
-    public private(set) var deleted: [CartID] = []
+    // Added sessionId to the tuple to match the updated analytics API.
+    public private(set) var activeCartChanges: [(CartID?, StoreID, UserProfileID?, CartSessionID?)] = []
 
-    public private(set) var activeChanges: [(new: CartID?, store: StoreID, profile: UserProfileID?)] = []
-
-    public private(set) var addedItems: [(item: CartItemID, cart: CartID)] = []
-    public private(set) var updatedItems: [(item: CartItemID, cart: CartID)] = []
-    public private(set) var removedItems: [(item: CartItemID, cart: CartID)] = []
+    public private(set) var addedItems: [(CartItem, Cart)] = []
+    public private(set) var updatedItems: [(CartItem, Cart)] = []
+    public private(set) var removedItems: [(CartItemID, Cart)] = []
 
     public init() {}
 
     public func cartCreated(_ cart: Cart) {
-        withLock { created.append(cart.id) }
+        createdCarts.append(cart)
     }
 
     public func cartUpdated(_ cart: Cart) {
-        withLock { updated.append(cart.id) }
+        updatedCarts.append(cart)
     }
 
     public func cartDeleted(id: CartID) {
-        withLock { deleted.append(id) }
+        deletedCartIDs.append(id)
     }
 
     public func activeCartChanged(
         newActiveCartId: CartID?,
         storeId: StoreID,
-        profileId: UserProfileID?
+        profileId: UserProfileID?,
+        sessionId: CartSessionID?
     ) {
-        withLock { activeChanges.append((newActiveCartId, storeId, profileId)) }
+        activeCartChanges.append((newActiveCartId, storeId, profileId, sessionId))
     }
 
     public func itemAdded(_ item: CartItem, in cart: Cart) {
-        withLock { addedItems.append((item.id, cart.id)) }
+        addedItems.append((item, cart))
     }
 
     public func itemUpdated(_ item: CartItem, in cart: Cart) {
-        withLock { updatedItems.append((item.id, cart.id)) }
+        updatedItems.append((item, cart))
     }
 
-    public func itemRemoved(itemId: CartItemID, from cart: Cart) {
-        withLock { removedItems.append((itemId, cart.id)) }
-    }
-
-    // MARK: - Helpers
-
-    private func withLock(_ body: () -> Void) {
-        lock.lock()
-        defer { lock.unlock() }
-        body()
+    public func itemRemoved(
+        itemId: CartItemID,
+        from cart: Cart
+    ) {
+        removedItems.append((itemId, cart))
     }
 }

@@ -31,6 +31,7 @@ enum CoreDataCartMapping {
         cdCart.id = cart.id.rawValue
         cdCart.storeId = cart.storeID.rawValue
         cdCart.profileId = cart.profileID?.rawValue
+        cdCart.sessionId = cart.sessionID?.rawValue
         
         // State
         cdCart.status = cart.status.rawValue
@@ -138,6 +139,7 @@ enum CoreDataCartMapping {
         }
         
         let profileID: UserProfileID? = cdCart.profileId.map(UserProfileID.init(rawValue:))
+        let sessionID: CartSessionID? = cdCart.sessionId.map(CartSessionID.init(rawValue:))
         let metadata: [String: String] = try decode(cdCart.metadataJSON) ?? [:]
         let storeImageURL = cdCart.storeImageURL.flatMap(URL.init(string:))
         
@@ -160,6 +162,7 @@ enum CoreDataCartMapping {
             id: CartID(rawValue: id),
             storeID: StoreID(rawValue: storeId),
             profileID: profileID,
+            sessionID: sessionID,
             items: items,
             status: status,
             createdAt: createdAt,

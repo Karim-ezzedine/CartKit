@@ -20,6 +20,7 @@ struct CoreDataCartStoreTests {
         id: CartID = .generate(),
         storeID: StoreID,
         profileID: UserProfileID?,
+        sessionID: CartSessionID? = nil,
         status: CartStatus = .active,
         createdAt: Date = Date(timeIntervalSince1970: 1),
         updatedAt: Date = Date(timeIntervalSince1970: 2),
@@ -29,6 +30,7 @@ struct CoreDataCartStoreTests {
             id: id,
             storeID: storeID,
             profileID: profileID,
+            sessionID: sessionID,
             items: [],
             status: status,
             createdAt: createdAt,
@@ -279,5 +281,111 @@ struct CoreDataCartStoreTests {
         let results = try await sut.fetchCarts(matching: q, limit: 2)
         
         #expect(results.count == 2)
+    }
+    
+    @Test
+    func fetchCarts_sessionFilter_semantics_areCorrect() async throws {
+        let sut = try await makeSUT()
+
+        let storeID = StoreID(rawValue: "store_session_coredata")
+        let profileID = UserProfileID(rawValue: "profile_session_coredata")
+
+        let sA = CartSessionID("session_A")
+        let sB = CartSessionID("session_B")
+
+        let sessionless = makeCart(storeID: storeID, profileID: profileID, sessionID: nil, status: .active, metadata: ["k": "nil"])
+        let a = makeCart(storeID: storeID, profileID: profileID, sessionID: sA, status: .active, metadata: ["k": "A"])
+        let b = makeCart(storeID: storeID, profileID: profileID, sessionID: sB, status: .active, metadata: ["k": "B"])
+
+        try await sut.saveCart(sessionless)
+        try await sut.saveCart(a)
+        try await sut.saveCart(b)
+
+        // sessionless only
+        let qNil = CartQuery(
+            storeID: storeID,
+            profileID: profileID,
+            session: .sessionless,
+            statuses: [.active],
+            sort: .updatedAtDescending
+        )
+        let rNil = try await sut.fetchCarts(matching: qNil, limit: nil)
+        #expect(rNil.count == 1)
+        #expect(rNil.first?.sessionID == nil)
+
+        // session A only
+        let qA = CartQuery(
+            storeID: storeID,
+            profileID: profileID,
+            session: .session(sA),
+            statuses: [.active],
+            sort: .updatedAtDescending
+        )
+        let rA = try await sut.fetchCarts(matching: qA, limit: nil)
+        #expect(rA.count == 1)
+        #expect(rA.first?.sessionID == sA)
+
+        // any session (nil + A + B)
+        let qAny = CartQuery(
+            storeID: storeID,
+            profileID: profileID,
+            session: .any,
+            statuses: [.active],
+            sort: .updatedAtDescending
+        )
+        let rAny = try await sut.fetchCarts(matching: qAny, limit: nil)
+        #expect(rAny.count == 3)
+    }
+
+    @Test
+    func fetchCarts_storeID_nil_meansAnyStore() async throws {
+        let sut = try await makeSUT()
+
+        let profileID = UserProfileID(rawValue: "profile_any_store_coredata")
+        let sA = CartSessionID("session_any_store")
+
+        let store1 = StoreID(rawValue: "store_any_1")
+        let store2 = StoreID(rawValue: "store_any_2")
+
+        let c1 = makeCart(storeID: store1, profileID: profileID, sessionID: sA, status: .active, metadata: ["s": "1"])
+        let c2 = makeCart(storeID: store2, profileID: profileID, sessionID: sA, status: .active, metadata: ["s": "2"])
+
+        try await sut.saveCart(c1)
+        try await sut.saveCart(c2)
+
+        let q = CartQuery(
+            storeID: nil,                      // IMPORTANT
+            profileID: profileID,
+            session: .session(sA),
+            statuses: [.active],
+            sort: .updatedAtDescending
+        )
+
+        let r = try await sut.fetchCarts(matching: q, limit: nil)
+        #expect(Set(r.map(\.storeID)) == Set([store1, store2]))
+    }
+
+    @Test
+    func fetchCarts_statusesNil_equalsEmptySet_noFilter() async throws {
+        let sut = try await makeSUT()
+
+        let storeID = StoreID(rawValue: "store_status_empty_coredata")
+        let profileID = UserProfileID(rawValue: "profile_status_empty_coredata")
+        let sA = CartSessionID("session_status_empty")
+
+        let active = makeCart(storeID: storeID, profileID: profileID, sessionID: sA, status: .active, metadata: ["st": "active"])
+        let checkedOut = makeCart(storeID: storeID, profileID: profileID, sessionID: sA, status: .checkedOut, metadata: ["st": "checkedOut"])
+
+        try await sut.saveCart(active)
+        try await sut.saveCart(checkedOut)
+
+        let qNil = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: nil, sort: .updatedAtDescending)
+        let qEmpty = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: [], sort: .updatedAtDescending)
+
+        let rNil = try await sut.fetchCarts(matching: qNil, limit: nil)
+        let rEmpty = try await sut.fetchCarts(matching: qEmpty, limit: nil)
+
+        #expect(Set(rNil.map(\.id)) == Set(rEmpty.map(\.id)))
+        #expect(rNil.count == 2)
     }
 }

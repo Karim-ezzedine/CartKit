@@ -301,6 +301,98 @@ struct SwiftDataCartStoreTests {
         #expect(result.count == 2)
         #expect(result.map(\.id) == [c3.id, c2.id])
     }
+    
+    @Test("fetch supports session filter semantics")
+    @available(iOS 17, *)
+    func fetch_sessionFilter_semantics_areCorrect() async throws {
+        let store = try makeStore()
+
+        let profileID = CartTestFixtures.demoProfileID
+        let storeID = CartTestFixtures.demoStoreID
+
+        let sA = CartSessionID("session_A")
+        let sB = CartSessionID("session_B")
+
+        var nilCart = CartTestFixtures.loggedInCart(storeID: storeID, profileID: profileID, sessionID: nil)
+        nilCart.status = .active
+
+        var a = CartTestFixtures.loggedInCart(storeID: storeID, profileID: profileID, sessionID: sA)
+        a.status = .active
+
+        var b = CartTestFixtures.loggedInCart(storeID: storeID, profileID: profileID, sessionID: sB)
+        b.status = .active
+
+        try await store.saveCart(nilCart)
+        try await store.saveCart(a)
+        try await store.saveCart(b)
+
+        let qNil = CartQuery(storeID: storeID, profileID: profileID, session: .sessionless, statuses: [.active], sort: .updatedAtDescending)
+        let rNil = try await store.fetchCarts(matching: qNil, limit: nil)
+        #expect(rNil.count == 1)
+        #expect(rNil.first?.sessionID == nil)
+
+        let qA = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: [.active], sort: .updatedAtDescending)
+        let rA = try await store.fetchCarts(matching: qA, limit: nil)
+        #expect(rA.count == 1)
+        #expect(rA.first?.sessionID == sA)
+
+        let qAny = CartQuery(storeID: storeID, profileID: profileID, session: .any, statuses: [.active], sort: .updatedAtDescending)
+        let rAny = try await store.fetchCarts(matching: qAny, limit: nil)
+        #expect(rAny.count == 3)
+    }
+
+    @Test("fetch supports storeID nil (any store)")
+    @available(iOS 17, *)
+    func fetch_storeID_nil_meansAnyStore() async throws {
+        let store = try makeStore()
+
+        let profileID = CartTestFixtures.demoProfileID
+        let sA = CartSessionID("session_any_store")
+
+        let store1 = CartTestFixtures.demoStoreID
+        let store2 = CartTestFixtures.anotherStoreID
+
+        var c1 = CartTestFixtures.loggedInCart(storeID: store1, profileID: profileID, sessionID: sA)
+        c1.status = .active
+        var c2 = CartTestFixtures.loggedInCart(storeID: store2, profileID: profileID, sessionID: sA)
+        c2.status = .active
+
+        try await store.saveCart(c1)
+        try await store.saveCart(c2)
+
+        let q = CartQuery(storeID: nil, profileID: profileID, session: .session(sA), statuses: [.active], sort: .updatedAtDescending)
+        let r = try await store.fetchCarts(matching: q, limit: nil)
+
+        #expect(Set(r.map(\.storeID)) == Set([store1, store2]))
+    }
+
+    @Test("fetch treats statuses nil and empty as no filter")
+    @available(iOS 17, *)
+    func fetch_statusesNil_equalsEmptySet_noFilter() async throws {
+        let store = try makeStore()
+
+        let storeID = CartTestFixtures.demoStoreID
+        let profileID = CartTestFixtures.demoProfileID
+        let sA = CartSessionID("session_status_empty")
+
+        var active = CartTestFixtures.loggedInCart(storeID: storeID, profileID: profileID, sessionID: sA)
+        active.status = .active
+
+        var checkedOut = CartTestFixtures.loggedInCart(storeID: storeID, profileID: profileID, sessionID: sA)
+        checkedOut.status = .checkedOut
+
+        try await store.saveCart(active)
+        try await store.saveCart(checkedOut)
+
+        let qNil = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: nil, sort: .updatedAtDescending)
+        let qEmpty = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: [], sort: .updatedAtDescending)
+
+        let rNil = try await store.fetchCarts(matching: qNil, limit: nil)
+        let rEmpty = try await store.fetchCarts(matching: qEmpty, limit: nil)
+
+        #expect(Set(rNil.map(\.id)) == Set(rEmpty.map(\.id)))
+        #expect(rNil.count == 2)
+    }
 }
 
 #endif
