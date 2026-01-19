@@ -112,6 +112,15 @@ public actor CoreDataCartStore {
             throw CoreDataCartStoreError.modelLoadFailed(modelName: modelName)
         }
         
+        // Force entity -> class mapping to the correct runtime types.
+        if let entity = model.entitiesByName["CDCart"] {
+            entity.managedObjectClassName = NSStringFromClass(CDCart.self)
+        }
+        
+        if let entity = model.entitiesByName["CDCartItem"] {
+            entity.managedObjectClassName = NSStringFromClass(CDCartItem.self)
+        }
+        
         return model
     }
     
