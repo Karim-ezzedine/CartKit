@@ -1,81 +1,12 @@
+import Foundation
+import Testing
+@testable import CartKitCore
+import CartKitTestingSupport
+
 // MARK: - Checkout Totals (Active Cart Group)
 
 extension CartManagerDomainTests {
-
-    // MARK: Test doubles (ports)
-
-    private actor StubPricingEngine: CartPricingEngine {
-        enum Mode {
-            /// Subtotal is derived from the cart's items sum (unitPrice * quantity).
-            /// Currency follows the first item (or USD if empty).
-            case deriveFromItems
-
-            /// Forces a fixed subtotal per store (currency must be provided).
-            case fixedPerStore([StoreID: Money])
-        }
-
-        private let mode: Mode
-
-        init(mode: Mode) {
-            self.mode = mode
-        }
-
-        func computeTotals(for cart: Cart, context: CartPricingContext) async throws -> CartTotals {
-            switch mode {
-            case .deriveFromItems:
-                let currency = cart.items.first?.unitPrice.currencyCode ?? "USD"
-                let subtotalAmount: Decimal = cart.items.reduce(.zero) { partial, item in
-                    partial + (item.unitPrice.amount * Decimal(item.quantity))
-                }
-                return CartTotals(subtotal: Money(amount: subtotalAmount, currencyCode: currency))
-
-            case .fixedPerStore(let map):
-                let money = map[cart.storeID] ?? Money(amount: .zero, currencyCode: "USD")
-                return CartTotals(subtotal: money)
-            }
-        }
-    }
-
-    private actor SpyPromotionEngine: PromotionEngine {
-        private(set) var calls: [(storeID: StoreID, promotions: [PromotionKind])] = []
-
-        func applyPromotions(_ promotions: [PromotionKind], to cartTotals: CartTotals) async throws -> CartTotals {
-            // In these tests, we apply a simple rule:
-            // - fixedAmountOffCart subtracts from grandTotal
-            // - freeDelivery sets deliveryFee to zero (already default zero in totals, but kept for completeness)
-            // - other kinds no-op
-            var result = cartTotals
-
-            for promo in promotions {
-                switch promo {
-                case .fixedAmountOffCart(let money):
-                    // Assume same currency in tests
-                    result.grandTotal = Money(
-                        amount: result.grandTotal.amount - money.amount,
-                        currencyCode: result.grandTotal.currencyCode
-                    )
-
-                case .freeDelivery:
-                    result.deliveryFee = .zero(currencyCode: result.subtotal.currencyCode)
-                    // grandTotal already includes deliveryFee; keep consistent:
-                    result.grandTotal = Money(
-                        amount: result.subtotal.amount + result.serviceFee.amount + result.tax.amount + result.deliveryFee.amount,
-                        currencyCode: result.subtotal.currencyCode
-                    )
-
-                case .percentageOffCart, .custom:
-                    break
-                }
-            }
-
-            return result
-        }
-
-        func record(storeID: StoreID, promotions: [PromotionKind]) async {
-            calls.append((storeID: storeID, promotions: promotions))
-        }
-    }
-
+    
     // MARK: Helpers
 
     private func makeManagerForGroupTotals(
@@ -292,5 +223,74 @@ extension CartManagerDomainTests {
             )
         }
     }
-}
+    
+    @Test
+    func validateBeforeCheckoutForActiveCartGroup_filtersEmptyCartsByDefault() async throws {
+        let profileID = UserProfileID("profile_group_validate_filter_empty")
+        let sessionID = CartSessionID("session_group_validate_filter_empty")
 
+        let storeA = StoreID("store_validate_A")
+        let storeB = StoreID("store_validate_B")
+
+        var cartA = CartTestFixtures.loggedInCart(storeID: storeA, profileID: profileID, sessionID: sessionID)
+        cartA.status = .active
+
+        var cartB = CartTestFixtures.loggedInCart(storeID: storeB, profileID: profileID, sessionID: sessionID)
+        cartB.status = .active
+        cartB.items = [] // empty
+
+        let store = InMemoryCartStore(initialCarts: [cartA, cartB])
+        let validation = StubValidationEngine(resultsByStore: [:])
+
+        let manager = CartManager(configuration: CartConfiguration(
+            cartStore: store,
+            validationEngine: validation
+        ))
+
+        let result = try await manager.validateBeforeCheckoutForActiveCartGroup(
+            profileID: profileID,
+            sessionID: sessionID,
+            includeEmptyCarts: false
+        )
+
+        #expect(Set(result.perStore.keys) == Set([storeA]))
+        #expect(result.isValid == true)
+    }
+
+    @Test
+    func validateBeforeCheckoutForActiveCartGroup_isInvalidWhenAnyStoreCartInvalid() async throws {
+        let profileID = UserProfileID("profile_group_validate_any_invalid")
+        let sessionID = CartSessionID("session_group_validate_any_invalid")
+
+        let storeA = StoreID("store_validate_ok")
+        let storeB = StoreID("store_validate_bad")
+
+        var cartA = CartTestFixtures.loggedInCart(storeID: storeA, profileID: profileID, sessionID: sessionID)
+        cartA.status = .active
+
+        var cartB = CartTestFixtures.loggedInCart(storeID: storeB, profileID: profileID, sessionID: sessionID)
+        cartB.status = .active
+
+        let store = InMemoryCartStore(initialCarts: [cartA, cartB])
+
+        // Use any real validation error you already have in the module.
+        let invalid: CartValidationResult = .invalid(error: .custom(message: "forced"))
+        let validation = StubValidationEngine(resultsByStore: [storeB: invalid])
+
+        let manager = CartManager(configuration: CartConfiguration(
+            cartStore: store,
+            validationEngine: validation
+        ))
+
+        let result = try await manager.validateBeforeCheckoutForActiveCartGroup(
+            profileID: profileID,
+            sessionID: sessionID,
+            includeEmptyCarts: true
+        )
+
+        #expect(result.perStore[storeA] == .valid)
+        #expect(result.perStore[storeB] == invalid)
+        #expect(result.isValid == false)
+    }
+
+}

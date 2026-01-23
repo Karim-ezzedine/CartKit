@@ -3,9 +3,10 @@
 /// Notes:
 /// - "Archived" carts are carts that are not `.active` (checkedOut/cancelled/expired).
 /// - Cleanup deletes carts from storage; it never modifies carts in-place.
+/// - Scope is `(storeID + profileID? + sessionID?)`.
 public struct CartLifecyclePolicy: Sendable, Hashable {
     
-    /// Keep at most N non-active carts per scope (storeID + profileID?).
+    /// Keep at most N non-active carts per scope `(storeID + profileID? + sessionID?)`.
     /// Most recently updated carts are kept; older ones are deleted.
     public let maxArchivedCartsPerScope: Int?
     

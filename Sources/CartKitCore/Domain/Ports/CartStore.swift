@@ -77,6 +77,24 @@ public struct CartQuery: Hashable, Codable, Sendable {
             sort: .updatedAtDescending
         )
     }
+    
+    /// Convenience for querying active carts across stores for a given profile + session group.
+    ///
+    /// - `storeID == nil` means any store.
+    /// - `sessionID == nil` means sessionless carts only
+    /// - `sessionID != nil` filters carts belonging to that session.
+    public static func activeAcrossStores(
+        profileID: UserProfileID?,
+        sessionID: CartSessionID?
+    ) -> CartQuery {
+        CartQuery(
+            storeID: nil,
+            profileID: profileID,
+            session: sessionID.map(SessionFilter.session) ?? .sessionless,
+            statuses: [.active],
+            sort: .updatedAtDescending
+        )
+    }
 }
 
 /// Abstraction over the underlying cart storage.

@@ -14,7 +14,7 @@ public actor CartManager {
     
     // MARK: - Dependencies
     
-    private let config: CartConfiguration
+    let config: CartConfiguration
     
     // MARK: - Observation
 
@@ -463,6 +463,71 @@ public actor CartManager {
         )
     }
     
+    /// Computes totals for the active cart group identified by `(profileID, sessionID)`.
+    ///
+    /// - Fetches `.active` carts across stores for the given group.
+    /// - Prices each cart independently (store-scoped).
+    /// - Applies promotions per store (`promotionsByStore[storeID]`).
+    /// - Excludes empty carts by default.
+    /// - Aggregates totals by summing per-store results (same currency assumption).
+    ///
+    /// - Throws:
+    ///   - Any error from `CartStore`, `CartPricingEngine`, or `PromotionEngine`.
+    ///   - `CartError.validationFailed` if currencies are mixed within the group.
+    ///   - `CartError.conflict` if multiple active carts exist for the same store in the group.
+    public func getTotalsForActiveCartGroup(
+        profileID: UserProfileID? = nil,
+        sessionID: CartSessionID?,
+        contextsByStore: [StoreID: CartPricingContext] = [:],
+        promotionsByStore: [StoreID: [PromotionKind]] = [:],
+        includeEmptyCarts: Bool = false
+    ) async throws -> CheckoutTotals {
+        
+        let query = CartQuery.activeAcrossStores(
+            profileID: profileID,
+            sessionID: sessionID
+        )
+        
+        let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
+        let eligible = includeEmptyCarts ? carts : carts.filter { !$0.items.isEmpty }
+        
+        var perStore: [StoreID: CartTotals] = [:]
+        perStore.reserveCapacity(eligible.count)
+        
+        for cart in eligible {
+            if perStore[cart.storeID] != nil {
+                throw CartError.conflict(
+                    reason: "Multiple active carts found for store=\(cart.storeID.rawValue) in the same session group."
+                )
+            }
+            
+            let context = contextsByStore[cart.storeID] ?? .plain(
+                storeID: cart.storeID,
+                profileID: cart.profileID,
+                sessionID: cart.sessionID
+            )
+            
+            let baseTotals = try await config.pricingEngine.computeTotals(
+                for: cart,
+                context: context
+            )
+            
+            let promos = promotionsByStore[cart.storeID]
+            let finalTotals = try await applyPromotionsIfAvailable(promos, to: baseTotals)
+            
+            perStore[cart.storeID] = finalTotals
+        }
+        
+        let aggregate = try aggregateGroupTotals(perStore.values)
+        
+        return CheckoutTotals(
+            profileID: profileID,
+            sessionID: sessionID,
+            perStore: perStore,
+            aggregate: aggregate
+        )
+    }
+    
     /// Applies promotions to already-computed cart totals, if any are provided.
     ///
     /// This is a small orchestration helper:
@@ -507,6 +572,49 @@ public actor CartManager {
         return await config.validationEngine.validate(cart: cart)
     }
     
+    /// Validates the active cart group identified by `(profileID, sessionID)`
+    /// before allowing checkout.
+    ///
+    /// - Fetches `.active` carts across stores for the given group.
+    /// - Excludes empty carts by default.
+    /// - Validates each store cart using the configured `CartValidationEngine`.
+    /// - Returns per-store results and a summary via `CheckoutGroupValidationResult.isValid`.
+    ///
+    /// - Throws: Any error thrown by the underlying `CartStore` fetch.
+    public func validateBeforeCheckoutForActiveCartGroup(
+        profileID: UserProfileID? = nil,
+        sessionID: CartSessionID?,
+        includeEmptyCarts: Bool = false
+    ) async throws -> CheckoutGroupValidationResult {
+
+        let query = CartQuery.activeAcrossStores(profileID: profileID, sessionID: sessionID)
+        let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
+
+        let eligible = includeEmptyCarts ? carts : carts.filter { !$0.items.isEmpty }
+
+        var perStore: [StoreID: CartValidationResult] = [:]
+        perStore.reserveCapacity(eligible.count)
+
+        for cart in eligible {
+            if perStore[cart.storeID] != nil {
+                // Same uniqueness guard as totals (keeps behavior consistent)
+                perStore[cart.storeID] = .invalid(
+                    error: .custom(message: "Multiple active carts found for the same store in one group.")
+                )
+                continue
+            }
+
+            let result = await config.validationEngine.validate(cart: cart)
+            perStore[cart.storeID] = result
+        }
+
+        return CheckoutGroupValidationResult(
+            profileID: profileID,
+            sessionID: sessionID,
+            perStore: perStore
+        )
+    }
+
     // MARK: - Item operations
     
     /// Adds a new item to the given cart.
@@ -597,97 +705,6 @@ public actor CartManager {
             changedItems: [],
             conflicts: conflicts
         )
-    }
-    
-    // MARK: - Lifecycle / Cleanup
-
-    /// Cleans up non-active carts for a given scope based on the provided policy.
-    ///
-    /// Behavior:
-    /// - Never deletes `.active` carts.
-    /// - Applies time-based deletion per status (using `updatedAt`).
-    /// - Applies max-archived retention by keeping most-recent carts.
-    /// - Scope is always enforced (storeID + profileID? + sessionID?).
-    public func cleanupCarts(
-        storeID: StoreID,
-        profileID: UserProfileID? = nil,
-        sessionID: CartSessionID? = nil,
-        policy: CartLifecyclePolicy,
-        now: Date = Date()
-    ) async throws -> CartCleanupResult {
-        
-        // Fetch all carts in scope (any status), sorted by most-recent update.
-        let sessionFilter: CartQuery.SessionFilter = sessionID.map { .session($0) } ?? .sessionless
-
-        let all = try await config.cartStore.fetchCarts(
-            matching: CartQuery(
-                storeID: storeID,
-                profileID: profileID,
-                session: sessionFilter,
-                statuses: nil,
-                sort: CartQuery.Sort.updatedAtDescending
-            ),
-            limit: nil
-        )
-        
-        // Active carts are never deleted.
-        let nonActive = all.filter { $0.status != .active }
-        
-        var toDelete = Set<CartID>()
-        
-        // Time-based deletion
-        func isOlderThanDays(_ cart: Cart, _ days: Int) -> Bool {
-            guard days >= 0 else { return false }
-            let threshold = now.addingTimeInterval(TimeInterval(-days * 24 * 60 * 60))
-            return cart.updatedAt < threshold
-        }
-        
-        for cart in nonActive {
-            switch cart.status {
-            case .expired:
-                if let days = policy.deleteExpiredOlderThanDays, isOlderThanDays(cart, days) {
-                    toDelete.insert(cart.id)
-                }
-            case .cancelled:
-                if let days = policy.deleteCancelledOlderThanDays, isOlderThanDays(cart, days) {
-                    toDelete.insert(cart.id)
-                }
-            case .checkedOut:
-                if let days = policy.deleteCheckedOutOlderThanDays, isOlderThanDays(cart, days) {
-                    toDelete.insert(cart.id)
-                }
-            case .active:
-                break
-            }
-        }
-        
-        // Max archived retention (after time-based deletions)
-        if let max = policy.maxArchivedCartsPerScope, max >= 0 {
-            let remaining = nonActive
-                .filter { !toDelete.contains($0.id) }
-            
-            if remaining.count > max {
-                let overflow = remaining.suffix(remaining.count - max)
-                for cart in overflow {
-                    toDelete.insert(cart.id)
-                }
-            }
-        }
-        
-        // Delete
-        var deleted: [CartID] = []
-        for id in toDelete {
-            try await deleteCartAndEmit(id)
-            deleted.append(id)
-        }
-        
-        config.logger.log(
-            "Cleanup completed:\nstore=\(storeID.rawValue),\nprofile=\(profileID?.rawValue ?? "guest"),\ndeleted=\(deleted.count),\nsessionID=\(sessionID?.rawValue ?? "nil")"
-        )
-        
-        // Deterministic output
-        deleted.sort { $0.rawValue < $1.rawValue }
-        return CartCleanupResult(deletedCartIDs: deleted)
     }
     
     // MARK: - Observes
@@ -907,7 +924,7 @@ public actor CartManager {
     ///   - Does NOT handle active-cart semantics.
     ///   - Caller is responsible for active-cart logic if needed.
     @discardableResult
-    private func deleteCartAndEmit(_ id: CartID) async throws -> CartID {
+    func deleteCartAndEmit(_ id: CartID) async throws -> CartID {
         try await config.cartStore.deleteCart(id: id)
         config.analyticsSink.cartDeleted(id: id)
         emit(.cartDeleted(id))
@@ -1015,5 +1032,73 @@ public actor CartManager {
         config.logger.log(
             "Active cart changed:\nstore=\(storeID.rawValue),\nprofile=\(profileID?.rawValue ?? "guest"),\ncart=\(newActiveCartID?.rawValue ?? "nil"),\nsessionID=\(sessionId?.rawValue ?? "nil")"
         )
+    }
+    
+    /// Aggregates a sequence of per-cart totals into a single `CartTotals`.
+    ///
+    /// Rules:
+    /// - Sums each monetary component (`subtotal`, fees, `tax`, `grandTotal`).
+    /// - Enforces the single-currency assumption across the group.
+    /// - If there are no totals (e.g., all carts filtered out), returns a zero totals value.
+    private func aggregateGroupTotals(_ totals: Dictionary<StoreID, CartTotals>.Values) throws -> CartTotals {
+        guard let first = totals.first else {
+            // No eligible carts => return zero totals in a deterministic currency.
+            // If you prefer, you can throw instead.
+            let currency = "USD"
+            return CartTotals(subtotal: .zero(currencyCode: currency))
+        }
+        
+        let currency = first.subtotal.currencyCode
+        
+        func ensureCurrency(_ money: Money) throws {
+            guard money.currencyCode == currency else {
+                throw CartError.validationFailed(reason: "Mixed currencies in checkout group.")
+            }
+        }
+        
+        var subtotal: Decimal = 0
+        var delivery: Decimal = 0
+        var service: Decimal = 0
+        var tax: Decimal = 0
+        var grand: Decimal = 0
+        
+        for t in totals {
+            try ensureCurrency(t.subtotal)
+            try ensureCurrency(t.deliveryFee)
+            try ensureCurrency(t.serviceFee)
+            try ensureCurrency(t.tax)
+            try ensureCurrency(t.grandTotal)
+            
+            subtotal += t.subtotal.amount
+            delivery += t.deliveryFee.amount
+            service += t.serviceFee.amount
+            tax += t.tax.amount
+            grand += t.grandTotal.amount
+        }
+        
+        return CartTotals(
+            subtotal: Money(amount: subtotal, currencyCode: currency),
+            deliveryFee: Money(amount: delivery, currencyCode: currency),
+            serviceFee: Money(amount: service, currencyCode: currency),
+            tax: Money(amount: tax, currencyCode: currency),
+            grandTotal: Money(amount: grand, currencyCode: currency)
+        )
+    }
+    
+    /// Deletes carts by ID and emits the corresponding lifecycle events.
+    ///
+    /// - Returns: A deterministic `CartCleanupResult` (IDs sorted ascending).
+    /// - Throws: Any error thrown by the underlying store deletion path.
+    func deleteCarts(_ ids: Set<CartID>) async throws -> CartCleanupResult {
+        var deleted: [CartID] = []
+        deleted.reserveCapacity(ids.count)
+        
+        for id in ids {
+            try await deleteCartAndEmit(id)
+            deleted.append(id)
+        }
+        
+        deleted.sort { $0.rawValue < $1.rawValue }
+        return CartCleanupResult(deletedCartIDs: deleted)
     }
 }

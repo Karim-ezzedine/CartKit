@@ -67,3 +67,39 @@ public struct CartTotals: Hashable, Codable, Sendable {
         }
     }
 }
+
+/// Aggregated totals for a unified checkout group (multi-store session).
+///
+/// A checkout group is identified by `(profileID, sessionID)` and may contain
+/// multiple active carts, each scoped to a different `storeID`.
+///
+/// Policies:
+/// - Pricing is computed per store-cart.
+/// - Promotions are applied per store-cart.
+/// - The group `aggregate` is a sum of `perStore` totals (assumes same currency).
+public struct CheckoutTotals: Hashable, Codable, Sendable {
+    
+    /// Optional user profile scope (nil = guest).
+    public let profileID: UserProfileID?
+    
+    /// Optional session scope (nil = legacy single-store flow treated as a group).
+    public let sessionID: CartSessionID?
+    
+    /// Totals for each store cart in the group.
+    public let perStore: [StoreID: CartTotals]
+    
+    /// Sum of all `perStore` totals (same currency assumption).
+    public let aggregate: CartTotals
+    
+    public init(
+        profileID: UserProfileID?,
+        sessionID: CartSessionID?,
+        perStore: [StoreID: CartTotals],
+        aggregate: CartTotals
+    ) {
+        self.profileID = profileID
+        self.sessionID = sessionID
+        self.perStore = perStore
+        self.aggregate = aggregate
+    }
+}
