@@ -327,7 +327,7 @@ let checkedOut = try await cartManager.updateStatus(
 
 CartManager emits events for cart and item mutations, status changes, and active cart changes.
 
-####UI layer observing cart changes:
+#### UI layer observing cart changes:
 ```swift
 let stream = await cartManager.observeEvents()
      
@@ -351,7 +351,7 @@ Task {
  }
 ```
 
-####Combine wrapper (UIKit/SwiftUI projects already using Combine):
+#### Combine wrapper (UIKit/SwiftUI projects already using Combine):
 
 ```swift
  Task { @MainActor in
