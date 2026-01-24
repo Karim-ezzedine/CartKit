@@ -87,6 +87,19 @@ Composition is intentionally explicit to ensure predictable behavior, testabilit
 
 Tests may bypass this builder and construct CartConfiguration directly.
 
+### Example: wiring CartManager
+
+```swift
+import CartKitCore
+
+// In your DI / composition layer:
+let configuration = try await CartConfiguration.configured(
+    storage: .automatic // .coreData, .swiftData
+)
+
+let cartManager = CartManager(configuration: configuration)
+
+```
 ---
 
 ### Choosing configuration options
@@ -134,11 +147,53 @@ Profile carts follow the same lifecycle rules as guest carts and differ only in 
 
 ### One-active-cart rule
 
-For a given `(storeID, profileID)` pair, only one cart may be active at a time.
+For a given `(storeID, profileID, sessionID)` scope, only one cart may be active at a time.
+
+This allows multi-store checkout by enabling multiple active carts for the same profile/session
+as long as they belong to different stores (each cart remains store-scoped).
 
 This invariant is enforced by `CartManager`, not by storage implementations.
 
-The rule ensures deterministic cart resolution and simplifies application-level state management.
+---
+
+### Session groups (multi-store checkout)
+
+CartKit supports a single checkout that may include items fulfilled by multiple stores by introducing a **session group**.
+
+**A session group is identified by `(profileID, sessionID)`:**
+- A session group can contain multiple `.active` carts across different stores.
+- Each cart remains store-scoped (`Cart.storeID` is a single store).
+- Checkout orchestration is done by grouping carts by `sessionID`.
+
+To discover what checkout groups currently exist for a user (or guest), use:
+
+- `getActiveCartGroups(profileID:)`
+
+Each group contains `.active` carts only, sorted by recency.
+
+#### Example: creating a multi-store checkout session
+
+```swift
+let profileID = UserProfileID("user_123") // or UserProfileID.generate()
+let sessionID = CartSessionID("checkout_session_abc") // or CartSessionID.generate()
+
+// Store A active cart in the session group
+_ = try await cartManager.setActiveCart(
+    storeID: StoreID("store_A"),
+    profileID: profileID,
+    sessionID: sessionID
+)
+
+// Store B active cart in the same session group
+_ = try await cartManager.setActiveCart(
+    storeID: StoreID("store_B"),
+    profileID: profileID,
+    sessionID: sessionID
+)
+
+// List active groups
+let groups = try await cartManager.getActiveCartGroups(profileID: profileID)
+```
 
 ---
 
@@ -232,6 +287,26 @@ The pricing engine is responsible for computing cart totals based on the cart’
 - Swap pricing logic per market or experiment
 - Test totals deterministically
 
+#### Checkout totals for a session group
+
+**For session-based checkout, CartKit can compute totals across all active carts in a `(profileID, sessionID)` group:**
+- Each store cart is priced independently (store-scoped context).
+- Promotions can be provided per store.
+- Results include per-store totals and an aggregated total (same-currency assumption).
+
+```swift
+let totals = try await cartManager.getTotalsForActiveCartGroup(
+    profileID: profileID,
+    sessionID: sessionID,
+    promotionsByStore: [
+        StoreID("store_A"): [.percentageOffCart(0.10)], // 10%
+        StoreID("store_B"): [.freeDelivery]
+    ]
+)
+
+let perStore = totals.perStore
+let aggregate = totals.aggregate
+```
 ---
 
 ### Validation
@@ -245,6 +320,23 @@ The validation engine determines whether the cart is eligible for progression (f
 
 Validation is a key boundary: CartKit can manage carts for guests, but applications often require additional rules before checkout (for example, authentication or delivery availability). Those rules belong in the validation policy, not in the domain entities themselves.
 
+#### Validate a session group before checkout
+
+Applications can validate every active store cart in a session group before checkout:
+
+```swift
+let validation = try await cartManager.validateBeforeCheckoutForActiveCartGroup(
+    profileID: profileID,
+    sessionID: sessionID
+)
+
+if validation.isValid {
+    // Safe to proceed with checkout
+} else {
+    // Inspect per-store results (which store is blocking checkout)
+    let perStore = validation.perStore
+}
+```
 ---
 
 ### Promotions
