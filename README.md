@@ -57,7 +57,6 @@ Apps that prefer a simpler setup may import **`CartKit`** instead.
    ```text
     https://github.com/Karim-ezzedine/CartKit
    ```
-   
 ---
 
 ## Configuration & Composition
@@ -165,6 +164,8 @@ CartKit supports a single checkout that may include items fulfilled by multiple 
 - Each cart remains store-scoped (`Cart.storeID` is a single store).
 - Checkout orchestration is done by grouping carts by `sessionID`.
 
+Session groups also have dedicated lifecycle helpers (cleanup across stores) — see *Cart operations → Lifecycle & cleanup*.
+
 To discover what checkout groups currently exist for a user (or guest), use:
 
 - `getActiveCartGroups(profileID:)`
@@ -174,7 +175,7 @@ Each group contains `.active` carts only, sorted by recency.
 #### Example: creating a multi-store checkout session
 
 ```swift
-let profileID = UserProfileID("user_123") // or UserProfileID.generate()
+let profileID = UserProfileID("user_123")
 let sessionID = CartSessionID("checkout_session_abc") // or CartSessionID.generate()
 
 // Store A active cart in the session group
@@ -204,6 +205,228 @@ When a guest authenticates, applications may choose to migrate the active guest 
 CartKit provides helper APIs to support this flow, while leaving the timing and strategy of migration entirely to the client.
 
 Migration helpers are designed to preserve cart contents and respect active cart invariants without performing implicit destructive actions.
+
+#### Example: migrate guest active cart to a profile cart
+
+```swift
+let storeID = StoreID("store_A")
+let profileID = UserProfileID("user_123")
+let sessionID = CartSessionID("checkout_session_abc")
+
+let migrated = try await cartManager.migrateGuestActiveCart(
+    storeID: storeID,
+    to: profileID,
+    strategy: .move,
+    sessionID: sessionID
+)
+```
+
+---
+
+## Cart operations
+
+This section shows minimal “how-to” examples for the most commonly used `CartManager` APIs:
+creating/reading an active cart, mutating items, updating status, and observing events.
+
+### Active cart & discovery
+
+Use `setActiveCart` to ensure a single active cart exists for a given `(storeID, profileID, sessionID)` scope.
+Use `getActiveCart` (or `getCart`) to retrieve it later.
+
+```swift
+let storeID = StoreID("store_A")
+let profileID = UserProfileID("user_123")
+let sessionID = CartSessionID("checkout_session_abc") // or CartSessionID.generate()
+
+// Ensure there is an active cart for this scope (creates if missing).
+let cart = try await cartManager.setActiveCart(
+    storeID: storeID,
+    profileID: profileID,
+    sessionID: sessionID
+)
+
+// Load active cart again (same scope).
+let active = try await cartManager.getActiveCart(
+    storeID: storeID,
+    profileID: profileID,
+    sessionID: sessionID
+)
+
+// Load by ID (works for any status).
+let byID = try await cartManager.getCart(id: cart.id)
+```
+
+### Items (add / update / remove)
+
+Item mutations operate on a specific `cartID`.
+
+```swift
+let cart = try await cartManager.setActiveCart(
+    storeID: StoreID("store_A"),
+    profileID: UserProfileID("user_123"),
+    sessionID: CartSessionID("checkout_session_abc")
+)
+
+let itemID = CartItemID.generate()
+
+// Add
+let addResult = try await cartManager.addItem(
+    to: cart.id,
+    item: CartItem(
+        id: itemID,
+        productID: "burger",
+        quantity: 1,
+        unitPrice: Money(amount: 10, currencyCode: "USD"),
+        modifiers: [],
+        imageURL: nil
+    )
+)
+
+// Update (by CartItem.id)
+let updateResult = try await cartManager.updateItem(
+    in: cart.id,
+    item: CartItem(
+        id: itemID,
+        productID: "burger",
+        quantity: 2,
+        unitPrice: Money(amount: 10, currencyCode: "USD"),
+        modifiers: [],
+        imageURL: nil
+    )
+)
+
+// Remove
+let removeResult = try await cartManager.removeItem(
+    from: cart.id,
+    itemID: itemID
+)
+```
+
+### Status & checkout
+
+`updateStatus` enforces status transition rules. Transitioning to `.checkedOut` validates the cart via the configured `CartValidationEngine`.
+
+```swift
+let profileID = UserProfileID("user_123")
+
+let cart = try await cartManager.setActiveCart(
+    storeID: StoreID("store_A"),
+    profileID: profileID,
+    sessionID: CartSessionID("checkout_session_abc")
+)
+
+// ...add items...
+
+let checkedOut = try await cartManager.updateStatus(
+    for: cart.id,
+    to: .checkedOut
+)
+```
+
+### Observability (events)
+
+CartManager emits events for cart and item mutations, status changes, and active cart changes.
+
+####UI layer observing cart changes:
+
+```swift
+let stream = await cartManager.observeEvents()
+     
+Task {
+    for await event in stream {
+         switch event {
+         case .cartCreated(let id):
+             // Refresh cart list, or load cart by id.
+             break
+         case .cartUpdated(let id):
+             // Refresh cart UI / totals.
+             break
+         case .cartDeleted(let id):
+             // Remove from UI.
+             break
+         case .activeCartChanged(let storeID, let profileID, let cartID):
+             // Update "current cart" state for this scope.
+             break
+         }
+     }
+ }
+```
+
+####Combine wrapper (UIKit/SwiftUI projects already using Combine):
+
+```swift
+ Task { @MainActor in
+     let publisher = await cartManager.eventsPublisher()
+     publisher
+         .sink { event in
+             // Handle event
+         }
+         .store(in: &cancellables)
+ }
+```
+### Lifecycle & cleanup
+
+CartKit provides cleanup utilities for removing **archived** carts (non-`.active`) based on a `CartLifecyclePolicy`.
+
+**Key rules:**
+- `.active` carts are never deleted.
+- Archived carts may be deleted by age (per status) and/or capped by retention count.
+- Cleanup works either for a **single store scope** or a **session group across stores**.
+
+> Important: when `sessionID == nil`, cleanup targets **sessionless carts only** and will not affect session-based carts.
+
+#### Example: cleanup archived carts for a single store scope
+
+Use `cleanupCarts(storeID:profileID:sessionID:policy:)` to clean archived carts within:
+`(storeID + profileID? + sessionID?)`.
+
+```swift
+let storeID = StoreID("store_A")
+let profileID = UserProfileID("user_123")
+let sessionID = CartSessionID("checkout_session_abc")
+
+let policy = CartLifecyclePolicy(
+    maxArchivedCartsPerScope: 20,
+    deleteExpiredOlderThanDays: 7,
+    deleteCancelledOlderThanDays: 30,
+    deleteCheckedOutOlderThanDays: nil
+)
+
+let result = try await cartManager.cleanupCarts(
+    storeID: storeID,
+    profileID: profileID,
+    sessionID: sessionID,
+    policy: policy
+)
+
+print("Deleted carts:", result.deletedCartIDs)
+```
+
+#### Example: cleanup archived carts for a session group (across stores)
+
+Use `cleanupCartGroup(profileID:sessionID:policy:)` to clean archived carts for a checkout session group:
+`(profileID + sessionID)` across **any store**.
+
+Retention (`maxArchivedCartsPerScope`) is applied **per store** within the session group.
+
+```swift
+let profileID = UserProfileID("user_123")
+let sessionID = CartSessionID("checkout_session_abc")
+
+let policy = CartLifecyclePolicy(
+    maxArchivedCartsPerScope: 10,
+    deleteExpiredOlderThanDays: 7,
+    deleteCancelledOlderThanDays: 30
+)
+
+let result = try await cartManager.cleanupCartGroup(
+    profileID: profileID,
+    sessionID: sessionID,
+    policy: policy
+)
+
+print("Deleted carts:", result.deletedCartIDs)
+```
 
 ---
 
