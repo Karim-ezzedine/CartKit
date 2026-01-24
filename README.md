@@ -256,6 +256,55 @@ let active = try await cartManager.getActiveCart(
 let byID = try await cartManager.getCart(id: cart.id)
 ```
 
+### Cart details & deletion
+
+Use cart-level utilities to update cart metadata, delete carts, or create a new active cart by reordering from a previous cart.
+
+#### Example: update cart details
+
+Updates cart-level metadata (name, context, image, metadata, min subtotal, max items).
+This only operates on `.active` carts; non-active carts will fail with a conflict error.
+Passing `nil` keeps the existing value as-is.
+
+```swift
+let cart = try await cartManager.setActiveCart(
+    storeID: StoreID("store_A"),
+    profileID: UserProfileID("user_123"),
+    sessionID: CartSessionID("checkout_session_abc")
+)
+
+let updated = try await cartManager.updateCartDetails(
+    cartID: cart.id,
+    displayName: "Dinner order",
+    context: "home_screen",
+    storeImageURL: URL(string: "https://example.com/store.png"),
+    metadata: ["source": "banner", "campaign": "winter"],
+    minSubtotal: Money(amount: 20, currencyCode: "USD"),
+    maxItemCount: 30
+)
+```
+
+#### Example: delete a cart (idempotent)
+
+Deleting is idempotent: if the cart does not exist, the operation is a no-op.
+If the deleted cart was .active, an activeCartChanged event is emitted with newActiveCartId == nil.
+
+```swift
+try await cartManager.deleteCart(id: cart.id)
+```
+
+#### Example: reorder (create a new active cart from a past cart)
+
+Reorder creates a new **active** cart by copying a source cart:
+- Expires the current active cart for the same scope (if any).
+- Regenerates `CartItemID`s.
+- Emits `activeCartChanged` for the scope.
+
+```swift
+let pastCartID = CartID("PAST_CART_ID")
+let newActive = try await cartManager.reorder(from: pastCartID)
+```
+
 ### Items (add / update / remove)
 
 Item mutations operate on a specific `cartID`.
