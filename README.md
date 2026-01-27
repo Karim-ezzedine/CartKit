@@ -1,5 +1,7 @@
 # CartKit
 
+![CartKit overview](Docs/Images/cartkit-overview.png)
+
 A modular, local cart SDK for iOS apps.
 
 CartKit lets you manage carts per store and per user scope (guest or profile), with pluggable storage (Core Data, SwiftData, or your own) and configurable pricing/validation/promotion/conflict-resolution engines.
