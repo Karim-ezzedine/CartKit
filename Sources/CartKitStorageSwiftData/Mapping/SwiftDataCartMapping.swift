@@ -85,7 +85,7 @@ enum SwiftDataCartMapping {
             minSubtotal: decodeMoney(amount: model.minSubtotalAmount,
                                      currencyCode: model.minSubtotalCurrencyCode),
             maxItemCount: model.maxItemCount,
-            savedPromotionKinds: decodePromotionKinds(model.promotionKindsJSON),
+            savedPromotionKinds: decodePromotionKinds(model.promotionKindsJSON)
         )
     }
     
