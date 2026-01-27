@@ -13,7 +13,7 @@ public struct PricingRequest: Hashable, Sendable {
 
     public init(
         context: CartPricingContext? = nil,
-        promotionOverride: [PromotionKind]? = nil,
+        promotionOverride: [PromotionKind]? = nil
     ) {
         self.context = context
         self.promotionOverride = promotionOverride
