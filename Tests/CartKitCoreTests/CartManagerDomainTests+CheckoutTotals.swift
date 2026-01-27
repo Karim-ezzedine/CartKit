@@ -6,7 +6,7 @@ import CartKitTestingSupport
 // MARK: - Checkout Totals (Active Cart Group)
 
 extension CartManagerDomainTests {
-    
+
     // MARK: Helpers
 
     private func makeManagerForGroupTotals(
@@ -26,7 +26,7 @@ extension CartManagerDomainTests {
     // MARK: Tests
 
     @Test
-    func getTotalsForActiveCartGroup_filtersEmptyCartsByDefault_andAggregates() async throws {
+    func totalsForActiveCartGroup_filtersEmptyCartsByDefault_andAggregates() async throws {
         let profileID = UserProfileID("profile_group_totals_filter_empty")
         let sessionID = CartSessionID("session_group_totals_filter_empty")
 
@@ -52,10 +52,10 @@ extension CartManagerDomainTests {
             promotionEngine: promos
         )
 
-        let totals = try await manager.getTotalsForActiveCartGroup(
+        let totals = try await manager.totalsForActiveCartGroup(
             profileID: profileID,
             sessionID: sessionID,
-            promotionsByStore: [:],
+            requestsByStore: [:],
             includeEmptyCarts: false
         )
 
@@ -66,7 +66,7 @@ extension CartManagerDomainTests {
     }
 
     @Test
-    func getTotalsForActiveCartGroup_includeEmptyCartsTrue_includesEmptyCarts_inAggregation() async throws {
+    func totalsForActiveCartGroup_includeEmptyCartsTrue_includesEmptyCarts_inAggregation() async throws {
         let profileID = UserProfileID("profile_group_totals_include_empty")
         let sessionID = CartSessionID("session_group_totals_include_empty")
 
@@ -92,10 +92,10 @@ extension CartManagerDomainTests {
             promotionEngine: promos
         )
 
-        let totals = try await manager.getTotalsForActiveCartGroup(
+        let totals = try await manager.totalsForActiveCartGroup(
             profileID: profileID,
             sessionID: sessionID,
-            promotionsByStore: [:],
+            requestsByStore: [:],
             includeEmptyCarts: true
         )
 
@@ -105,7 +105,7 @@ extension CartManagerDomainTests {
     }
 
     @Test
-    func getTotalsForActiveCartGroup_appliesPromotionsPerStore_onlyToThatStore() async throws {
+    func totalsForActiveCartGroup_appliesPromotionsPerStore_onlyToThatStore() async throws {
         let profileID = UserProfileID("profile_group_totals_promos")
         let sessionID = CartSessionID("session_group_totals_promos")
 
@@ -133,11 +133,13 @@ extension CartManagerDomainTests {
             promotionEngine: promotionEngine
         )
 
-        let totals = try await manager.getTotalsForActiveCartGroup(
+        let totals = try await manager.totalsForActiveCartGroup(
             profileID: profileID,
             sessionID: sessionID,
-            promotionsByStore: [
-                storeA: [.fixedAmountOffCart(Money(amount: 2, currencyCode: "USD"))]
+            requestsByStore: [
+                storeA: PricingRequest(
+                    promotionOverride: [.fixedAmountOffCart(Money(amount: 2, currencyCode: "USD"))]
+                )
             ],
             includeEmptyCarts: true
         )
@@ -155,7 +157,7 @@ extension CartManagerDomainTests {
     }
 
     @Test
-    func getTotalsForActiveCartGroup_throwsConflict_whenDuplicateActiveStoreWithinSameGroup() async throws {
+    func totalsForActiveCartGroup_throwsConflict_whenDuplicateActiveStoreWithinSameGroup() async throws {
         let profileID = UserProfileID("profile_group_totals_dup_store")
         let sessionID = CartSessionID("session_group_totals_dup_store")
         let storeA = StoreID("store_dup_A")
@@ -176,7 +178,7 @@ extension CartManagerDomainTests {
         )
 
         await #expect(throws: CartError.self) {
-            _ = try await manager.getTotalsForActiveCartGroup(
+            _ = try await manager.totalsForActiveCartGroup(
                 profileID: profileID,
                 sessionID: sessionID,
                 includeEmptyCarts: true
@@ -185,7 +187,7 @@ extension CartManagerDomainTests {
     }
 
     @Test
-    func getTotalsForActiveCartGroup_throwsValidationFailed_whenCurrenciesMixedAcrossStores() async throws {
+    func totalsForActiveCartGroup_throwsValidationFailed_whenCurrenciesMixedAcrossStores() async throws {
         let profileID = UserProfileID("profile_group_totals_mixed_ccy")
         let sessionID = CartSessionID("session_group_totals_mixed_ccy")
 
@@ -216,14 +218,14 @@ extension CartManagerDomainTests {
         )
 
         await #expect(throws: CartError.self) {
-            _ = try await manager.getTotalsForActiveCartGroup(
+            _ = try await manager.totalsForActiveCartGroup(
                 profileID: profileID,
                 sessionID: sessionID,
                 includeEmptyCarts: true
             )
         }
     }
-    
+
     @Test
     func validateBeforeCheckoutForActiveCartGroup_filtersEmptyCartsByDefault() async throws {
         let profileID = UserProfileID("profile_group_validate_filter_empty")
@@ -292,5 +294,117 @@ extension CartManagerDomainTests {
         #expect(result.perStore[storeB] == invalid)
         #expect(result.isValid == false)
     }
-
+    
+    // MARK: - Saved Promotion Kinds (Mutations)
+    
+    @Test
+    func updateSavedPromotionKinds_updatesAndPersists() async throws {
+        let storeID = StoreID("store_saved_promos_update")
+        let profileID = UserProfileID("profile_saved_promos_update")
+        let sessionID = CartSessionID("session_saved_promos_update")
+        
+        var cart = CartTestFixtures.loggedInCart(
+            storeID: storeID,
+            profileID: profileID,
+            sessionID: sessionID
+        )
+        cart.status = .active
+        cart.savedPromotionKinds = []
+        
+        let store = InMemoryCartStore(initialCarts: [cart])
+        let manager = CartManager(configuration: .init(cartStore: store))
+        
+        let newKinds: [PromotionKind] = [
+            .freeDelivery,
+            .fixedAmountOffCart(Money(amount: 2, currencyCode: "USD"))
+        ]
+        
+        let updated = try await manager.updateSavedPromotionKinds(
+            cartID: cart.id,
+            promotionKinds: newKinds
+        )
+        
+        #expect(updated.savedPromotionKinds == newKinds)
+        
+        let reloaded = try await store.loadCart(id: cart.id)
+        let persisted = try #require(reloaded)
+        
+        #expect(persisted.savedPromotionKinds == newKinds)
+    }
+    
+    @Test
+    func clearSavedPromotionKinds_clearsAndPersists() async throws {
+        let storeID = StoreID("store_saved_promos_clear")
+        let profileID = UserProfileID("profile_saved_promos_clear")
+        let sessionID = CartSessionID("session_saved_promos_clear")
+        
+        var cart = CartTestFixtures.loggedInCart(
+            storeID: storeID,
+            profileID: profileID,
+            sessionID: sessionID
+        )
+        cart.status = .active
+        cart.savedPromotionKinds = [
+            .percentageOffCart(Decimal(string: "0.10") ?? 0.10)
+        ]
+        
+        let store = InMemoryCartStore(initialCarts: [cart])
+        let manager = CartManager(configuration: .init(cartStore: store))
+        
+        let cleared = try await manager.clearSavedPromotionKinds(cartID: cart.id)
+        
+        #expect(cleared.savedPromotionKinds.isEmpty)
+        
+        let reloaded = try await store.loadCart(id: cart.id)
+        let persisted = try #require(reloaded)
+        
+        #expect(persisted.savedPromotionKinds.isEmpty)
+    }
+    
+    @Test
+    func updateSavedPromotionKinds_throwsConflict_whenCartNotActive() async throws {
+        let storeID = StoreID("store_saved_promos_non_active_update")
+        let profileID = UserProfileID("profile_saved_promos_non_active_update")
+        let sessionID = CartSessionID("session_saved_promos_non_active_update")
+        
+        var cart = CartTestFixtures.loggedInCart(
+            storeID: storeID,
+            profileID: profileID,
+            sessionID: sessionID
+        )
+        cart.status = .checkedOut
+        
+        let store = InMemoryCartStore(initialCarts: [cart])
+        let manager = CartManager(configuration: .init(cartStore: store))
+        
+        await #expect(throws: CartError.self) {
+            _ = try await manager.updateSavedPromotionKinds(
+                cartID: cart.id,
+                promotionKinds: [.freeDelivery]
+            )
+        }
+    }
+    
+    @Test
+    func clearSavedPromotionKinds_throwsConflict_whenCartNotActive() async throws {
+        let storeID = StoreID("store_saved_promos_non_active_clear")
+        let profileID = UserProfileID("profile_saved_promos_non_active_clear")
+        let sessionID = CartSessionID("session_saved_promos_non_active_clear")
+        
+        var cart = CartTestFixtures.loggedInCart(
+            storeID: storeID,
+            profileID: profileID,
+            sessionID: sessionID
+        )
+        cart.status = .expired
+        cart.savedPromotionKinds = [.freeDelivery]
+        
+        let store = InMemoryCartStore(initialCarts: [cart])
+        let manager = CartManager(configuration: .init(cartStore: store))
+        
+        await #expect(throws: CartError.self) {
+            _ = try await manager.clearSavedPromotionKinds(cartID: cart.id)
+        }
+    }
 }
+

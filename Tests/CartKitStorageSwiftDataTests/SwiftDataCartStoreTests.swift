@@ -24,13 +24,17 @@ struct SwiftDataCartStoreTests {
         let store = try makeStore()
 
         let now = Date()
-        let cart = CartTestFixtures.guestCart(
+        var cart = CartTestFixtures.guestCart(
             storeID: CartTestFixtures.demoStoreID,
             now: now
         )
+        
+        cart.savedPromotionKinds = [
+            .freeDelivery,
+            .fixedAmountOffCart(Money(amount: 2, currencyCode: "USD"))
+        ]
 
         try await store.saveCart(cart)
-
         let loaded = try await store.loadCart(id: cart.id)
 
         let unwrapped = try #require(loaded)
@@ -39,6 +43,7 @@ struct SwiftDataCartStoreTests {
         #expect(unwrapped.profileID == nil) // guest
         #expect(unwrapped.status == cart.status)
         #expect(unwrapped.items.count == cart.items.count)
+        #expect(unwrapped.savedPromotionKinds == cart.savedPromotionKinds)
     }
 
     @Test("save twice updates existing cart")
@@ -68,7 +73,8 @@ struct SwiftDataCartStoreTests {
             context: cart.context,
             storeImageURL: cart.storeImageURL,
             minSubtotal: cart.minSubtotal,
-            maxItemCount: cart.maxItemCount
+            maxItemCount: cart.maxItemCount,
+            savedPromotionKinds: cart.savedPromotionKinds
         )
 
         try await store.saveCart(cart)
@@ -195,7 +201,8 @@ struct SwiftDataCartStoreTests {
             context: guest.context,
             storeImageURL: guest.storeImageURL,
             minSubtotal: guest.minSubtotal,
-            maxItemCount: guest.maxItemCount
+            maxItemCount: guest.maxItemCount,
+            savedPromotionKinds: guest.savedPromotionKinds
         )
 
         logged = Cart(
@@ -211,7 +218,8 @@ struct SwiftDataCartStoreTests {
             context: logged.context,
             storeImageURL: logged.storeImageURL,
             minSubtotal: logged.minSubtotal,
-            maxItemCount: logged.maxItemCount
+            maxItemCount: logged.maxItemCount,
+            savedPromotionKinds: logged.savedPromotionKinds
         )
 
         try await store.saveCart(guest)
@@ -250,7 +258,9 @@ struct SwiftDataCartStoreTests {
             context: nil,
             storeImageURL: nil,
             minSubtotal: nil,
-            maxItemCount: nil
+            maxItemCount: nil,
+            savedPromotionKinds: []
+
         )
 
         let c2 = Cart(
@@ -266,7 +276,8 @@ struct SwiftDataCartStoreTests {
             context: nil,
             storeImageURL: nil,
             minSubtotal: nil,
-            maxItemCount: nil
+            maxItemCount: nil,
+            savedPromotionKinds: []
         )
 
         let c3 = Cart(
@@ -282,7 +293,8 @@ struct SwiftDataCartStoreTests {
             context: nil,
             storeImageURL: nil,
             minSubtotal: nil,
-            maxItemCount: nil
+            maxItemCount: nil,
+            savedPromotionKinds: []
         )
 
         try await store.saveCart(c1)

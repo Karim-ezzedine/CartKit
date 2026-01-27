@@ -46,6 +46,9 @@ enum CoreDataCartMapping {
         // Arbitrary metadata (stored as JSON Data)
         cdCart.metadataJSON = try encode(cart.metadata)
         
+        // Persist promotion kinds (stored as JSON Data)
+        cdCart.promotionKindsJSON = encodePromotionKinds(cart.savedPromotionKinds)
+        
         // Store rule snapshots
         if let min = cart.minSubtotal {
             cdCart.minSubtotalAmount = NSDecimalNumber(decimal: min.amount)
@@ -141,6 +144,7 @@ enum CoreDataCartMapping {
         let profileID: UserProfileID? = cdCart.profileId.map(UserProfileID.init(rawValue:))
         let sessionID: CartSessionID? = cdCart.sessionId.map(CartSessionID.init(rawValue:))
         let metadata: [String: String] = try decode(cdCart.metadataJSON) ?? [:]
+        let savedPromotionKinds = decodePromotionKinds(cdCart.promotionKindsJSON)
         let storeImageURL = cdCart.storeImageURL.flatMap(URL.init(string:))
         
         let minSubtotal: Money?
@@ -172,7 +176,8 @@ enum CoreDataCartMapping {
             context: cdCart.context,
             storeImageURL: storeImageURL,
             minSubtotal: minSubtotal,
-            maxItemCount: maxItemCount
+            maxItemCount: maxItemCount,
+            savedPromotionKinds: savedPromotionKinds
         )
     }
     
@@ -259,5 +264,17 @@ enum CoreDataCartMapping {
     private static func decode(_ data: Data?) throws -> [String: String]? {
         guard let data else { return nil }
         return try JSONDecoder().decode([String: String].self, from: data)
+    }
+    
+    // MARK: - PromotionKinds JSON helpers
+
+    private static func encodePromotionKinds(_ kinds: [PromotionKind]) -> Data? {
+        guard !kinds.isEmpty else { return nil }
+        return try? JSONEncoder().encode(kinds)
+    }
+
+    private static func decodePromotionKinds(_ data: Data?) -> [PromotionKind] {
+        guard let data else { return [] }
+        return (try? JSONDecoder().decode([PromotionKind].self, from: data)) ?? []
     }
 }

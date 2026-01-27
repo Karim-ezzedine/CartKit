@@ -102,6 +102,9 @@ public actor SwiftDataCartStore: CartStore {
         model.updatedAt = cart.updatedAt
         
         model.metadataJSON = (cart.metadata.isEmpty ? nil : try? JSONEncoder().encode(cart.metadata))
+        model.promotionKindsJSON = (cart.savedPromotionKinds.isEmpty
+                                    ? nil
+                                    : try? JSONEncoder().encode(cart.savedPromotionKinds))
         model.displayName = cart.displayName
         model.context = cart.context
         model.storeImageURLString = cart.storeImageURL?.absoluteString

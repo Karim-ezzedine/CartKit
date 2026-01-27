@@ -10,6 +10,7 @@ CartKit lets you manage carts per store and per user scope (guest or profile), w
 - Multiple carts per store
 - Explicit composition and dependency injection
 - Pluggable storage and business policies
+- Multi-store checkout via session groups
 
 > **Status:** WIP  
 > APIs and behavior may change until v1.0 is tagged.
@@ -42,9 +43,13 @@ CartKit lets you manage carts per store and per user scope (guest or profile), w
 
 - **CartKitTestingSupport**  
   Test helpers (in-memory store, fakes/spies) for unit and integration tests.
+  
 
-Most apps import **`CartKitCore`** in feature code and keep storage selection in the composition/DI layer.  
-Apps that prefer a simpler setup may import **`CartKit`** instead.
+### Recommended import boundaries
+
+- Import **`CartKitCore`** in feature code (domain + use cases via `CartManager`).
+- Import a storage module (**`CartKitStorageCoreData`** or **`CartKitStorageSwiftData`**) only in your composition/DI layer where you build `CartConfiguration`.
+- Import **`CartKit`** only if you prefer using the umbrella module that re-exports the common defaults.
 
 ---
 
@@ -89,6 +94,7 @@ Tests may bypass this builder and construct CartConfiguration directly.
 ### Example: wiring CartManager
 
 ```swift
+import CartKit
 import CartKitCore
 
 // In your DI / composition layer:
@@ -242,7 +248,12 @@ let sessionID = CartSessionID("checkout_session_abc") // or CartSessionID.genera
 let cart = try await cartManager.setActiveCart(
     storeID: storeID,
     profileID: profileID,
-    sessionID: sessionID
+    sessionID: sessionID,
+    displayName: "Dinner order",
+    metadata: ["source": "banner"],
+    minSubtotal: Money(amount: 20, currencyCode: "USD"),
+    maxItemCount: 30,
+    savedPromotionKinds: [.freeDelivery]
 )
 
 // Load active cart again (same scope).
@@ -262,7 +273,7 @@ Use cart-level utilities to update cart metadata, delete carts, or create a new 
 
 #### Example: update cart details
 
-Updates cart-level metadata (name, context, image, metadata, min subtotal, max items).
+Updates cart-level metadata (name, context, image, metadata, min subtotal, max items, saved promotions).
 This only operates on `.active` carts; non-active carts will fail with a conflict error.
 Passing `nil` keeps the existing value as-is.
 
@@ -280,7 +291,8 @@ let updated = try await cartManager.updateCartDetails(
     storeImageURL: URL(string: "https://example.com/store.png"),
     metadata: ["source": "banner", "campaign": "winter"],
     minSubtotal: Money(amount: 20, currencyCode: "USD"),
-    maxItemCount: 30
+    maxItemCount: 30,
+    savedPromotionKinds: [.freeDelivery]
 )
 ```
 
@@ -566,18 +578,94 @@ The pricing engine is responsible for computing cart totals based on the cart’
 - Results include per-store totals and an aggregated total (same-currency assumption).
 
 ```swift
-let totals = try await cartManager.getTotalsForActiveCartGroup(
+let totals = try await cartManager.totalsForActiveCartGroup(
     profileID: profileID,
     sessionID: sessionID,
-    promotionsByStore: [
-        StoreID("store_A"): [.percentageOffCart(0.10)], // 10%
-        StoreID("store_B"): [.freeDelivery]
+    requestsByStore: [
+        StoreID("store_A"): PricingRequest(
+            promotionOverride: [.percentageOffCart(0.10)] // 10%
+        ),
+        StoreID("store_B"): PricingRequest(
+            promotionOverride: [.freeDelivery]
+        )
     ]
 )
 
 let perStore = totals.perStore
 let aggregate = totals.aggregate
 ```
+
+#### Totals for the active cart in a scope
+
+```swift
+let request = PricingRequest(
+    context: .plain(
+        storeID: StoreID("store_A"),
+        profileID: UserProfileID("user_123"),
+        sessionID: CartSessionID("checkout_session_abc")
+    ),
+    promotionOverride: nil // falls back to cart.savedPromotionKinds
+)
+
+let totals = try await cartManager.totalsForActiveCart(request: request)
+```
+---
+
+### Promotions
+
+Promotions are modeled as policy: how discounts/rewards are discovered, applied, and represented.
+
+**Typical responsibilities include:**
+- Applying promo codes
+- Automatic offers (buy X get Y, tiered discounts, etc.)
+- Updating applied promotions as cart contents change
+
+Promotion behavior varies significantly between products; keeping it behind an engine prevents domain model churn and supports A/B testing and regional rules.
+
+#### Persisted promotions (cart-level)
+
+CartKit supports persisting the promotion kinds that should apply by default when pricing a cart.
+This configuration is stored on the cart (`Cart.savedPromotionKinds`) and persisted in local storage.
+
+**Deterministic precedence**
+1) If `PricingRequest.promotionOverride` is non-nil → use it.
+2) Else, if the cart has persisted `savedPromotionKinds` → use them.
+3) Else → compute totals with no promotions.
+
+This keeps the domain aggregate (`Cart`) as the source of persisted pricing configuration,
+while the promotion math remains in the injected `PromotionEngine` (Clean Architecture: policy behind an interface).
+
+**Example: persist promotions on a cart**
+```swift
+let cart = try await cartManager.setActiveCart(
+    storeID: StoreID("store_A"),
+    profileID: UserProfileID("user_123"),
+    sessionID: CartSessionID("checkout_session_abc")
+)
+
+try await cartManager.updateSavedPromotionKinds(
+    cartID: cart.id,
+    promotionKinds: [
+        .freeDelivery,
+        .fixedAmountOffCart(Money(amount: 2, currencyCode: "USD"))
+    ]
+)
+
+// Now pricing uses savedPromotionKinds automatically (no override provided)
+let totals = try await cartManager.totals(for: cart.id)
+
+// Override for a single call (does not persist)
+let overrideTotals = try await cartManager.totals(
+    for: cart.id,
+    request: PricingRequest(
+        promotionOverride: [.percentageOffCart(0.10)]
+    )
+)
+
+// Clear persisted promotions
+try await cartManager.clearSavedPromotionKinds(cartID: cart.id)
+```
+
 ---
 
 ### Validation
@@ -608,19 +696,6 @@ if validation.isValid {
     let perStore = validation.perStore
 }
 ```
----
-
-### Promotions
-
-Promotions are modeled as policy: how discounts/rewards are discovered, applied, and represented.
-
-**Typical responsibilities include:**
-- Applying promo codes
-- Automatic offers (buy X get Y, tiered discounts, etc.)
-- Updating applied promotions as cart contents change
-
-Promotion behavior varies significantly between products; keeping it behind an engine prevents domain model churn and supports A/B testing and regional rules.
-
 ---
 
 ### Catalog conflict handling (client responsibility)

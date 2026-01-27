@@ -16,7 +16,14 @@ public extension CartManager {
     func setActiveCart(
         storeID: StoreID,
         profileID: UserProfileID? = nil,
-        sessionID: CartSessionID? = nil
+        sessionID: CartSessionID? = nil,
+        displayName: String? = nil,
+        context: String? = nil,
+        storeImageURL: URL? = nil,
+        metadata: [String: String] = [:],
+        minSubtotal: Money? = nil,
+        maxItemCount: Int? = nil,
+        savedPromotionKinds: [PromotionKind] = []
     ) async throws -> Cart {
         // Try to find an existing active cart for this scope.
         if let cart = try await getActiveCart(
@@ -32,7 +39,14 @@ public extension CartManager {
             storeID: storeID,
             profileID: profileID,
             sessionID: sessionID,
-            status: .active
+            displayName: displayName,
+            context: context,
+            storeImageURL: storeImageURL,
+            metadata: metadata,
+            minSubtotal: minSubtotal,
+            maxItemCount: maxItemCount,
+            status: .active,
+            savedPromotionKinds: savedPromotionKinds
         )
         
         return newCart
@@ -159,7 +173,8 @@ public extension CartManager {
         storeImageURL: URL? = nil,
         metadata: [String: String]? = nil,
         minSubtotal: Money? = nil,
-        maxItemCount: Int? = nil
+        maxItemCount: Int? = nil,
+        savedPromotionKinds: [PromotionKind]? = nil
     ) async throws -> Cart {
         var cart = try await loadMutableCart(for: cartID)
         
@@ -180,6 +195,9 @@ public extension CartManager {
         }
         if let maxItemCount {
             cart.maxItemCount = maxItemCount
+        }
+        if let savedPromotionKinds {
+            cart.savedPromotionKinds = savedPromotionKinds
         }
         
         let updatedCart = try await saveCartAfterMutation(cart)
@@ -289,7 +307,8 @@ public extension CartManager {
                 context: guestActive.context,
                 storeImageURL: guestActive.storeImageURL,
                 minSubtotal: guestActive.minSubtotal,
-                maxItemCount: guestActive.maxItemCount
+                maxItemCount: guestActive.maxItemCount,
+                savedPromotionKinds: guestActive.savedPromotionKinds
             )
 
             let saved = try await saveCartAfterMutation(moved)

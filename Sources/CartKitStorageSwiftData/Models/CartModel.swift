@@ -42,6 +42,9 @@ public final class CartModel {
     public var displayName: String?
     public var context: String?
     public var storeImageURLString: String?
+    
+    /// Domain: [PromotionKind] stored as JSON bytes.
+    public var promotionKindsJSON: Data?
 
     // MARK: - Snapshot rules (mirrors domain)
 
@@ -67,6 +70,7 @@ public final class CartModel {
         createdAt: Date,
         updatedAt: Date,
         metadataJSON: Data? = nil,
+        promotionKindsJSON: Data? = nil,
         displayName: String? = nil,
         context: String? = nil,
         storeImageURLString: String? = nil,
@@ -83,6 +87,7 @@ public final class CartModel {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.metadataJSON = metadataJSON
+        self.promotionKindsJSON = promotionKindsJSON
         self.displayName = displayName
         self.context = context
         self.storeImageURLString = storeImageURLString

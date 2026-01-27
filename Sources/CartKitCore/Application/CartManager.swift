@@ -72,7 +72,8 @@ public actor CartManager {
         metadata: [String: String] = [:],
         minSubtotal: Money? = nil,
         maxItemCount: Int? = nil,
-        status: CartStatus
+        status: CartStatus,
+        savedPromotionKinds: [PromotionKind] = []
     ) async throws -> Cart {
         let now = Date()
         
@@ -90,7 +91,8 @@ public actor CartManager {
             context: context,
             storeImageURL: storeImageURL,
             minSubtotal: minSubtotal,
-            maxItemCount: maxItemCount
+            maxItemCount: maxItemCount,
+            savedPromotionKinds: savedPromotionKinds
         )
         
         return try await persistNewCart(cart, setAsActive: status == .active)
@@ -242,7 +244,8 @@ public actor CartManager {
             context: source.context,
             storeImageURL: source.storeImageURL,
             minSubtotal: source.minSubtotal,
-            maxItemCount: source.maxItemCount
+            maxItemCount: source.maxItemCount,
+            savedPromotionKinds: source.savedPromotionKinds
         )
     }
     
@@ -454,5 +457,33 @@ public actor CartManager {
         
         deleted.sort { $0.rawValue < $1.rawValue }
         return CartCleanupResult(deletedCartIDs: deleted)
+    }
+    
+    /// Applies promotions to already-computed cart totals, if any are provided.
+    ///
+    /// This is a small orchestration helper:
+    /// - If `promotions` is `nil`, the input `cartTotals` are returned unchanged.
+    /// - If `promotions` is non-`nil`, the call is delegated to the configured
+    ///   `PromotionEngine.applyPromotions(_:,to:)`.
+    ///
+    /// This keeps `CartManager` responsible for the flow (pricing → promotions)
+    /// while `PromotionEngine` encapsulates the promotion math.
+    ///
+    /// - Parameters:
+    ///   - promotions: Optional map of promotion kinds to applied promotions.
+    ///   - cartTotals: Base totals computed by the `CartPricingEngine`.
+    /// - Returns: Final `CartTotals` after applying promotions, or the original
+    ///            totals when no promotions are provided.
+    /// - Throws: Any error thrown by the configured `PromotionEngine`.
+    func applyPromotionsIfAvailable(
+        _ promotions: [PromotionKind]? = nil,
+        to cartTotals: CartTotals
+    ) async throws -> CartTotals {
+        if let promotions = promotions {
+            return try await config.promotionEngine.applyPromotions(promotions, to: cartTotals)
+        }
+        else {
+            return cartTotals
+        }
     }
 }

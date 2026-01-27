@@ -46,6 +46,11 @@ public struct Cart: Hashable, Codable, Sendable {
     /// Optional per-cart maximum number of items allowed.
     public var maxItemCount: Int?
     
+    // MARK: - Pricing configuration
+
+    /// Persisted promotion kinds (types) to apply when pricing the cart.
+    public var savedPromotionKinds: [PromotionKind]
+
     // MARK: - Init
     
     public init(
@@ -62,7 +67,8 @@ public struct Cart: Hashable, Codable, Sendable {
         context: String? = nil,
         storeImageURL: URL? = nil,
         minSubtotal: Money? = nil,
-        maxItemCount: Int? = nil
+        maxItemCount: Int? = nil,
+        savedPromotionKinds: [PromotionKind] = []
     ) {
         self.id = id
         self.storeID = storeID
@@ -78,6 +84,7 @@ public struct Cart: Hashable, Codable, Sendable {
         self.storeImageURL = storeImageURL
         self.minSubtotal = minSubtotal
         self.maxItemCount = maxItemCount
+        self.savedPromotionKinds = savedPromotionKinds
     }
     
     // MARK: - Convenience

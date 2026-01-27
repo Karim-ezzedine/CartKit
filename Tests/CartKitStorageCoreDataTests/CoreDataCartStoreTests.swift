@@ -24,7 +24,8 @@ struct CoreDataCartStoreTests {
         status: CartStatus = .active,
         createdAt: Date = Date(timeIntervalSince1970: 1),
         updatedAt: Date = Date(timeIntervalSince1970: 2),
-        metadata: [String: String] = ["source": "test"]
+        metadata: [String: String] = ["source": "test"],
+        savedPromotionKinds: [PromotionKind] = []
     ) -> Cart {
         Cart(
             id: id,
@@ -40,7 +41,8 @@ struct CoreDataCartStoreTests {
             context: "unit-tests",
             storeImageURL: URL(string: "https://example.com/store.png"),
             minSubtotal: nil,
-            maxItemCount: nil
+            maxItemCount: nil,
+            savedPromotionKinds: savedPromotionKinds
         )
     }
     
@@ -73,6 +75,12 @@ struct CoreDataCartStoreTests {
         let profileID = UserProfileID(rawValue: "profile-1")
         
         var cart = makeCart(storeID: storeID, profileID: profileID)
+        
+        cart.savedPromotionKinds = [
+            .freeDelivery,
+            .fixedAmountOffCart(Money(amount: 2, currencyCode: "USD"))
+        ]
+        
         cart.items = [makeItem(productID: "burger", quantity: 3)]
         
         try await sut.saveCart(cart)
@@ -87,6 +95,7 @@ struct CoreDataCartStoreTests {
         #expect(loaded?.items.count == 1)
         #expect(loaded?.items.first?.productID == "burger")
         #expect(loaded?.items.first?.quantity == 3)
+        #expect(loaded?.savedPromotionKinds == cart.savedPromotionKinds)
     }
     
     @Test
@@ -105,6 +114,7 @@ struct CoreDataCartStoreTests {
             status: .active,
             metadata: ["v": "1"]
         )
+        v1.savedPromotionKinds = [.freeDelivery]
         v1.items = [makeItem(productID: "a", quantity: 1)]
         try await sut.saveCart(v1)
         
@@ -115,6 +125,7 @@ struct CoreDataCartStoreTests {
             status: .checkedOut,
             metadata: ["v": "2"]
         )
+        v2.savedPromotionKinds = [.percentageOffCart(0.10)]
         v2.items = [makeItem(productID: "b", quantity: 4)]
         try await sut.saveCart(v2)
         
@@ -124,6 +135,7 @@ struct CoreDataCartStoreTests {
         #expect(loaded?.items.count == 1)
         #expect(loaded?.items.first?.productID == "b")
         #expect(loaded?.items.first?.quantity == 4)
+        #expect(loaded?.savedPromotionKinds == [.percentageOffCart(0.10)])
     }
     
     @Test

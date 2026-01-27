@@ -19,6 +19,7 @@ extension CDCart {
     @NSManaged public var minSubtotalAmount: NSDecimalNumber?
     @NSManaged public var minSubtotalCurrencyCode: String?
     @NSManaged public var profileId: String?
+    @NSManaged public var promotionKindsJSON: Data?
     @NSManaged public var sessionId: String?
     @NSManaged public var status: String?
     @NSManaged public var storeId: String?

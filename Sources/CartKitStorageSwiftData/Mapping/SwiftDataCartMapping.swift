@@ -19,6 +19,7 @@ enum SwiftDataCartMapping {
             createdAt: cart.createdAt,
             updatedAt: cart.updatedAt,
             metadataJSON: encodeMetadata(cart.metadata),
+            promotionKindsJSON: encodePromotionKinds(cart.savedPromotionKinds),
             displayName: cart.displayName,
             context: cart.context,
             storeImageURLString: cart.storeImageURL?.absoluteString,
@@ -83,7 +84,8 @@ enum SwiftDataCartMapping {
             storeImageURL: model.storeImageURLString.flatMap(URL.init(string:)),
             minSubtotal: decodeMoney(amount: model.minSubtotalAmount,
                                      currencyCode: model.minSubtotalCurrencyCode),
-            maxItemCount: model.maxItemCount
+            maxItemCount: model.maxItemCount,
+            savedPromotionKinds: decodePromotionKinds(model.promotionKindsJSON),
         )
     }
     
@@ -132,6 +134,16 @@ enum SwiftDataCartMapping {
     private static func decodeMoney(amount: Decimal?, currencyCode: String?) -> Money? {
         guard let amount, let currencyCode else { return nil }
         return Money(amount: amount, currencyCode: currencyCode)
+    }
+    
+    private static func encodePromotionKinds(_ kinds: [PromotionKind]) -> Data? {
+        guard !kinds.isEmpty else { return nil }
+        return try? JSONEncoder().encode(kinds)
+    }
+
+    private static func decodePromotionKinds(_ data: Data?) -> [PromotionKind] {
+        guard let data else { return [] }
+        return (try? JSONDecoder().decode([PromotionKind].self, from: data)) ?? []
     }
 }
 #endif
