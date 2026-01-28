@@ -23,13 +23,13 @@ let package = Package(
             name: "CartKitStorageCoreData",
             targets: ["CartKitStorageCoreData"]
         ),
-
+        
         // SwiftData-based storage implementation (iOS 17+ APIs inside)
         .library(
             name: "CartKitStorageSwiftData",
             targets: ["CartKitStorageSwiftData"]
         ),
-
+        
         // Testing helpers (fakes, builders, in-memory stores)
         .library(
             name: "CartKitTestingSupport",
@@ -53,66 +53,75 @@ let package = Package(
         ),
         
         // MARK: - Core
-
-        .target(
-            name: "CartKitCore",
-            dependencies: []
-        ),
-
+        
+            .target(
+                name: "CartKitCore",
+                dependencies: []
+            ),
+        
         // MARK: - Storage
-
-        .target(
-            name: "CartKitStorageCoreData",
-            dependencies: [
-                "CartKitCore"
-            ],
-            resources: [
-                .process("Resources/CartStorage.momd")
-            ]
-        ),
-
-        .target(
-            name: "CartKitStorageSwiftData",
-            dependencies: [
-                "CartKitCore"
-            ]
-        ),
-
+        
+            .target(
+                name: "CartKitStorageCoreData",
+                dependencies: [
+                    "CartKitCore"
+                ],
+                resources: [
+                    .process("Resources/CartStorage.momd")
+                ]
+            ),
+        
+            .target(
+                name: "CartKitStorageSwiftData",
+                dependencies: [
+                    "CartKitCore"
+                ]
+            ),
+        
         // MARK: - Testing Support
-
-        .target(
-            name: "CartKitTestingSupport",
-            dependencies: [
-                "CartKitCore"
-            ]
-        ),
-
+        
+            .target(
+                name: "CartKitTestingSupport",
+                dependencies: [
+                    "CartKitCore"
+                ]
+            ),
+        
         // MARK: - Tests (placeholder for now)
-
-        .testTarget(
-            name: "CartKitCoreTests",
-            dependencies: [
-                "CartKitCore",
-                "CartKitTestingSupport"
-            ]
-        ),
         
-        .testTarget(
-            name: "CartKitStorageCoreDataTests",
-            dependencies: [
-                "CartKitStorageCoreData",
-                "CartKitCore",
-                "CartKitTestingSupport"
-            ]
-        ),
+            .testTarget(
+                name: "CartKitTests",
+                dependencies: [
+                    "CartKit",           // where Migration Runner & policy will live
+                    "CartKitCore",       // if any shared fixtures/types are needed
+                    "CartKitTestingSupport"
+                ]
+            ),
         
-        .testTarget(
-            name: "CartKitStorageSwiftDataTests",
-            dependencies: [
-                "CartKitStorageSwiftData",
-                "CartKitCore",
-                "CartKitTestingSupport"
-            ]
-        )
+            .testTarget(
+                name: "CartKitCoreTests",
+                dependencies: [
+                    "CartKitCore",
+                    "CartKitTestingSupport"
+                ]
+            ),
+        
+            .testTarget(
+                name: "CartKitStorageCoreDataTests",
+                dependencies: [
+                    "CartKitStorageCoreData",
+                    "CartKitCore",
+                    "CartKitTestingSupport"
+                ]
+            ),
+        
+            .testTarget(
+                name: "CartKitStorageSwiftDataTests",
+                dependencies: [
+                    "CartKitStorageSwiftData",
+                    "CartKitCore",
+                    "CartKitTestingSupport"
+                ]
+            )
     ]
 )
