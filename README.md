@@ -520,11 +520,70 @@ Applications are expected to resolve storage once at composition time.
   - Guarded by availability checks
   - Recommended for iOS 17-only applications
 
-SwiftData support lives in a separate module and is never selected implicitly.
+SwiftData support lives in a separate module and is selected explicitly by your chosen `CartStoragePreference`.
+In particular, `.automatic` prefers SwiftData on iOS 17+ and falls back to Core Data on older OS versions.
 
 For applications supporting multiple OS versions, Core Data remains the safest default.
 
 ---
+
+## Persistence migrations
+
+CartKit supports migrating persisted carts across SDK releases when the persistence schema or
+storage backend changes.
+
+### Where migrations run (Clean Architecture)
+
+Migrations are a **composition/infrastructure concern** and are executed during storage resolution
+in `CartStoreFactory` (via `CartConfiguration.configured(...)`) before returning a `CartStore`.
+
+Domain types (`CartManager`, entities) remain unaware of persistence evolution.
+
+### Migration policy
+
+You can control migration behavior via `CartStoreMigrationPolicy`:
+- `.auto` (default): run idempotent migrations when needed.
+- `.none`: never run migrations.
+- `.force`: run migrations even if previously completed (debug/tools or recovery).
+
+### Migration state
+
+Migrations are tracked via `CartStoreMigrationStateStore` (default: `UserDefaultsCartMigrationStateStore`)
+to ensure idempotency.
+
+### Cross-backend migration (Core Data → SwiftData)
+
+When `storage: .automatic` selects SwiftData on iOS 17+, CartKit can migrate carts from an existing
+Core Data store into the SwiftData store:
+
+- **Runs only when needed**:
+  - source (Core Data) has carts
+  - target (SwiftData) is empty
+  - migration not already completed (state store)
+- **Force behavior**:
+  - `.force` allows migration even if the target already has data
+- **Idempotent**:
+  - completion is tracked; re-running does not duplicate carts
+
+### Example: configure storage + migrations
+
+```swift
+import CartKit
+import CartKitCore
+
+let configuration = try await CartConfiguration.configured(
+    storage: .automatic,
+    migrationPolicy: .auto, // .none / .force
+    migrationStateStore: UserDefaultsCartMigrationStateStore()
+)
+```
+
+### Notes
+
+- **Core Data schema changes** use lightweight migration options in the Core Data stack.
+- **SwiftData schema evolution** is tracked via a versioned schema and migration plan.
+- If you provide a **custom `CartStore`**, it must implement `fetchAllCarts(limit:)` so that
+  infrastructure migrations can take a full snapshot across stores/profiles/sessions.
 
 ### Custom storage
 
