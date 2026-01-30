@@ -24,10 +24,10 @@ public actor SwiftDataCartStore: CartStore {
             modelConfiguration = ModelConfiguration()
         }
         
+        let schema = Schema(versionedSchema: CartKitSwiftDataSchemaV1.self)
         self.container = try ModelContainer(
-            for: CartModel.self,
-            CartItemModel.self,
-            CartItemModifierModel.self,
+            for: schema,
+            migrationPlan: CartKitSwiftDataMigrationPlan.self,
             configurations: modelConfiguration
         )
     }

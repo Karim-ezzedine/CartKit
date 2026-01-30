@@ -12,7 +12,7 @@
 struct CartStoreMigrationRunner: Sendable {
     
     /// Defines how the runner behaves when a migration fails.
-    public enum FailureMode: Sendable, Equatable {
+    enum FailureMode: Sendable, Equatable {
         /// Stop at the first failure and rethrow the error.
         case stopOnFailure
     }
