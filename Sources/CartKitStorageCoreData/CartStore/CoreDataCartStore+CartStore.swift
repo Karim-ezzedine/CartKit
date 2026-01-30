@@ -113,6 +113,22 @@ extension CoreDataCartStore: CartStore {
             return try results.map(CoreDataCartMapping.toDomain)
         }
     }
+
+    public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
+        try await perform { context in
+            let request: NSFetchRequest<CDCart> = CDCart.fetchRequest()
+
+            // No predicate: return all carts across stores/profiles/sessions.
+            request.sortDescriptors = Self.sortDescriptors(for: .updatedAtDescending)
+
+            if let limit {
+                request.fetchLimit = max(0, limit)
+            }
+
+            let results = try context.fetch(request)
+            return try results.map(CoreDataCartMapping.toDomain)
+        }
+    }
     
     /// Maps `CartQuery.Sort` to Core Data sort descriptors.
     private static func sortDescriptors(for sort: CartQuery.Sort) -> [NSSortDescriptor] {

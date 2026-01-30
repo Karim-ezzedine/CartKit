@@ -69,11 +69,19 @@ enum CoreDataCartMapping {
             existingItems.forEach { context.delete($0) }
         }
         
+        let cartInContext = context.object(with: cdCart.objectID) as? CDCart ?? cdCart
+        let itemEntity = cdCart.entity.relationshipsByName["items"]?.destinationEntity
+
         for item in cart.items {
-            let cdItem = CDCartItem(context: context)
+            let cdItem: CDCartItem
+            if let itemEntity {
+                cdItem = CDCartItem(entity: itemEntity, insertInto: context)
+            } else {
+                cdItem = CDCartItem(context: context)
+            }
             apply(item, to: cdItem, in: context)
-            cdItem.cart = cdCart
-            cdCart.addToItems(cdItem)
+            // Set relationship from the item side to allow Core Data to populate the inverse.
+            cdItem.cart = cartInContext
         }
         
         return cdCart
@@ -109,13 +117,19 @@ enum CoreDataCartMapping {
             existingMods.forEach { context.delete($0) }
         }
         
+        let modifierEntity = cdItem.entity.relationshipsByName["modifiers"]?.destinationEntity
+
         for mod in item.modifiers {
-            let cdMod = CDCartItemModifier(context: context)
+            let cdMod: CDCartItemModifier
+            if let modifierEntity {
+                cdMod = CDCartItemModifier(entity: modifierEntity, insertInto: context)
+            } else {
+                cdMod = CDCartItemModifier(context: context)
+            }
             cdMod.id = mod.id
             cdMod.name = mod.name
             cdMod.priceDeltaAmount = NSDecimalNumber(decimal: mod.priceDelta.amount)
             cdMod.priceDeltaCurrencyCode = mod.priceDelta.currencyCode
-            cdMod.item = cdItem
             
             cdItem.addToModifiers(cdMod)
         }

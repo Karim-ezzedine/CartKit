@@ -92,4 +92,14 @@ public actor InMemoryCartStore: CartStore {
             return sorted
         }
     }
+
+    public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
+        let sorted = cartsByID.values.sorted { $0.updatedAt > $1.updatedAt }
+
+        if let limit, limit >= 0 {
+            return Array(sorted.prefix(limit))
+        } else {
+            return sorted
+        }
+    }
 }

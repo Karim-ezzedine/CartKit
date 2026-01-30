@@ -20,12 +20,15 @@ public enum CartStoreFactory {
 
         let store = try await resolveStore(preference: preference)
 
-        // Phase 2 wiring: run migration orchestration (migrators list is empty for now).
-        // Phase 4 will add real migrators (e.g., CoreData -> SwiftData copy).
+        // Phase 4 wiring: run cross-backend migration if needed.
         try await runMigrationsIfNeeded(
             policy: migrationPolicy,
             stateStore: migrationStateStore,
-            migrators: migratorsForPhase2()
+            migrators: await migratorsForCrossBackendMigration(
+                preference: preference,
+                targetStore: store,
+                policy: migrationPolicy
+            )
         )
 
         return store
@@ -85,9 +88,34 @@ private extension CartStoreFactory {
         try await runner.run(migrators)
     }
 
-    /// Phase 2: no actual migrations yet. Keep the hook in place.
-    static func migratorsForPhase2() -> [any CartStoreMigrator] {
-        []
+    /// Cross-backend migration (iOS 17+ when SwiftData is target).
+    static func migratorsForCrossBackendMigration(
+        preference: CartStoragePreference,
+        targetStore: any CartStore,
+        policy: CartStoreMigrationPolicy
+    ) async -> [any CartStoreMigrator] {
+        #if os(iOS) && canImport(SwiftData) && canImport(CartKitStorageSwiftData)
+        guard preference != .coreData else { return [] }
+        guard #available(iOS 17, *) else { return [] }
+        guard targetStore is SwiftDataCartStore else { return [] }
+
+        do {
+            let source = try await CoreDataCartStore()
+            let allowWhenTargetHasData = (policy == .force)
+            return [
+                CartStoreCrossBackendMigrator(
+                    source: source,
+                    target: targetStore,
+                    allowWhenTargetHasData: allowWhenTargetHasData
+                )
+            ]
+        } catch {
+            // If Core Data cannot be initialized, skip migration and fall back to target store.
+            return []
+        }
+        #else
+        return []
+        #endif
     }
 }
 

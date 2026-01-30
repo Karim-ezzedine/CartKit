@@ -133,4 +133,10 @@ public protocol CartStore: Sendable {
         matching query: CartQuery,
         limit: Int?
     ) async throws -> [Cart]
+
+    /// Fetches all carts across stores/profiles/sessions.
+    ///
+    /// - Note: Used by infrastructure migrations that need a full snapshot.
+    /// - Parameter limit: Optional maximum number of carts to return. `nil` = no limit.
+    func fetchAllCarts(limit: Int?) async throws -> [Cart]
 }

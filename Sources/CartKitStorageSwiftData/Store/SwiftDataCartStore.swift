@@ -83,6 +83,17 @@ public actor SwiftDataCartStore: CartStore {
 
         return try models.map(SwiftDataCartMapping.toDomain)
     }
+
+    public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
+        let context = ModelContext(container)
+
+        var descriptor = FetchDescriptor<CartModel>()
+        descriptor.sortBy = sortDescriptors(for: .updatedAtDescending)
+        if let limit { descriptor.fetchLimit = max(0, limit) }
+
+        let models = try context.fetch(descriptor)
+        return try models.map(SwiftDataCartMapping.toDomain)
+    }
     
     // MARK: - Internals
     
