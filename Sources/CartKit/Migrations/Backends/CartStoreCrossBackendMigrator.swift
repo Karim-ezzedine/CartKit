@@ -22,17 +22,19 @@ struct CartStoreCrossBackendMigrator: CartStoreMigrator {
         self.allowWhenTargetHasData = allowWhenTargetHasData
     }
 
-    func migrate() async throws {
+    func migrate() async throws -> CartStoreMigrator.Result {
         let sourceCarts = try await source.fetchAllCarts(limit: nil)
-        guard !sourceCarts.isEmpty else { return }
+        guard !sourceCarts.isEmpty else { return .skipped(shouldMarkCompleted: true) }
 
         if !allowWhenTargetHasData {
             let targetPreview = try await target.fetchAllCarts(limit: 1)
-            guard targetPreview.isEmpty else { return }
+            guard targetPreview.isEmpty else { return .skipped(shouldMarkCompleted: false) }
         }
 
         for cart in sourceCarts {
             try await target.saveCart(cart)
         }
+
+        return .migrated(carts: sourceCarts.count)
     }
 }

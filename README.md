@@ -527,10 +527,17 @@ For applications supporting multiple OS versions, Core Data remains the safest d
 
 ---
 
-## Persistence migrations
+## Migration
 
 CartKit supports migrating persisted carts across SDK releases when the persistence schema or
 storage backend changes.
+
+### What is migrated
+
+- Carts and items
+- Cart metadata (`metadata`, `displayName`, `context`, `storeImageURL`)
+- Promotion persistence (`savedPromotionKinds`)
+- Snapshot rule fields (`minSubtotal`, `maxItemCount`)
 
 ### Where migrations run (Clean Architecture)
 
@@ -546,10 +553,41 @@ You can control migration behavior via `CartStoreMigrationPolicy`:
 - `.none`: never run migrations.
 - `.force`: run migrations even if previously completed (debug/tools or recovery).
 
+#### Disable migrations
+
+```swift
+let configuration = try await CartConfiguration.configured(
+    storage: .automatic,
+    migrationPolicy: .none
+)
+```
+
+#### Force migrations
+
+```swift
+let configuration = try await CartConfiguration.configured(
+    storage: .automatic,
+    migrationPolicy: .force
+)
+```
+
 ### Migration state
 
 Migrations are tracked via `CartStoreMigrationStateStore` (default: `UserDefaultsCartMigrationStateStore`)
 to ensure idempotency.
+
+### Observability
+
+Migrations emit start/success/failure events through `CartStoreMigrationObserver`.
+By default, CartKit logs migration lifecycle using `CartLoggerMigrationObserver`, which writes to the
+configured `CartLogger`.
+
+### Failure strategy
+
+You can control what happens when a migration fails via `CartStoreFactory.MigrationFailureStrategy`:
+- `.throwError` (default): fail composition and surface the error.
+- `.fallbackToCoreDataWhenAutomatic`: when `storage: .automatic` selected SwiftData (iOS 17+), fall back
+  to Core Data if migration fails.
 
 ### Cross-backend migration (Core Data → SwiftData)
 
@@ -574,7 +612,9 @@ import CartKitCore
 let configuration = try await CartConfiguration.configured(
     storage: .automatic,
     migrationPolicy: .auto, // .none / .force
-    migrationStateStore: UserDefaultsCartMigrationStateStore()
+    migrationStateStore: UserDefaultsCartMigrationStateStore(),
+    migrationFailureStrategy: .fallbackToCoreDataWhenAutomatic,
+    logger: DefaultCartLogger()
 )
 ```
 

@@ -8,6 +8,13 @@ import CartKitStorageSwiftData
 
 public enum CartStoreFactory {
 
+    public enum MigrationFailureStrategy: Sendable, Equatable {
+        /// Throw and fail composition if migrations fail.
+        case throwError
+        /// If `.automatic` selected SwiftData and migration fails, fall back to Core Data.
+        case fallbackToCoreDataWhenAutomatic
+    }
+
     /// Creates a `CartStore` based on the requested preference and (optionally) runs migrations.
     ///
     /// - Migration is a composition concern (Clean Architecture): performed here, before returning the store.
@@ -15,21 +22,45 @@ public enum CartStoreFactory {
     public static func makeStore(
         preference: CartStoragePreference,
         migrationPolicy: CartStoreMigrationPolicy = .auto,
-        migrationStateStore: any CartStoreMigrationStateStore = UserDefaultsCartMigrationStateStore()
+        migrationStateStore: any CartStoreMigrationStateStore = UserDefaultsCartMigrationStateStore(),
+        migrationFailureStrategy: MigrationFailureStrategy = .throwError,
+        migrationLogger: CartLogger = DefaultCartLogger()
     ) async throws -> any CartStore {
 
         let store = try await resolveStore(preference: preference)
 
-        // Phase 4 wiring: run cross-backend migration if needed.
-        try await runMigrationsIfNeeded(
-            policy: migrationPolicy,
-            stateStore: migrationStateStore,
-            migrators: await migratorsForCrossBackendMigration(
-                preference: preference,
-                targetStore: store,
-                policy: migrationPolicy
+        // Wiring: run cross-backend migration if needed.
+        let observer = CartLoggerMigrationObserver(logger: migrationLogger)
+
+        do {
+            try await runMigrationsIfNeeded(
+                policy: migrationPolicy,
+                stateStore: migrationStateStore,
+                observer: observer,
+                migrators: await migratorsForCrossBackendMigration(
+                    preference: preference,
+                    targetStore: store,
+                    policy: migrationPolicy
+                )
             )
-        )
+        } catch {
+            // Failure strategy: safe fallback for `.automatic` -> SwiftData migrations.
+            switch migrationFailureStrategy {
+            case .throwError:
+                throw error
+            case .fallbackToCoreDataWhenAutomatic:
+                #if os(iOS) && canImport(SwiftData) && canImport(CartKitStorageSwiftData)
+                if preference == .automatic, #available(iOS 17, *), store is SwiftDataCartStore {
+                    await observer.migrationFailed(
+                        id: CartMigrationID(rawValue: "factory_fallback_to_coredata"),
+                        error: error
+                    )
+                    return try await CoreDataCartStore()
+                }
+                #endif
+                throw error
+            }
+        }
 
         return store
     }
@@ -79,11 +110,13 @@ private extension CartStoreFactory {
     static func runMigrationsIfNeeded(
         policy: CartStoreMigrationPolicy,
         stateStore: any CartStoreMigrationStateStore,
+        observer: any CartStoreMigrationObserver,
         migrators: [any CartStoreMigrator]
     ) async throws {
         let runner = CartStoreMigrationRunner(
             stateStore: stateStore,
-            policy: policy
+            policy: policy,
+            observer: observer
         )
         try await runner.run(migrators)
     }

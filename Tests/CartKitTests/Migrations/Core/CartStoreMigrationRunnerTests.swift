@@ -24,6 +24,7 @@ struct CartStoreMigrationRunnerTests {
         let counter = Counter()
         let migrator = SpyMigrator(id: id) {
             await counter.increment()
+            return .migrated(carts: 0)
         }
         
         let runner = CartStoreMigrationRunner(stateStore: store, policy: .auto)
@@ -42,6 +43,7 @@ struct CartStoreMigrationRunnerTests {
         let counter = Counter()
         let migrator = SpyMigrator(id: id) {
             await counter.increment()
+            return .migrated(carts: 0)
         }
         
         let runner = CartStoreMigrationRunner(stateStore: store, policy: .force)
@@ -68,6 +70,7 @@ struct CartStoreMigrationRunnerTests {
         
         let m2 = SpyMigrator(id: id2) {
             await recorder.append("m2")
+            return .migrated(carts: 0)
         }
         
         let runner = CartStoreMigrationRunner(stateStore: store, policy: .auto)
@@ -91,6 +94,7 @@ struct CartStoreMigrationRunnerTests {
         let counter = Counter()
         let migrator = SpyMigrator(id: id) {
             await counter.increment()
+            return .migrated(carts: 0)
         }
 
         let runner = CartStoreMigrationRunner(stateStore: store, policy: .none)

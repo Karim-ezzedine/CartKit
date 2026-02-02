@@ -20,15 +20,18 @@ struct CartStoreMigrationRunner: Sendable {
     private let stateStore: any CartStoreMigrationStateStore
     private let policy: CartStoreMigrationPolicy
     private let failureMode: FailureMode
+    private let observer: any CartStoreMigrationObserver
     
     public init(
         stateStore: any CartStoreMigrationStateStore,
         policy: CartStoreMigrationPolicy = .auto,
-        failureMode: FailureMode = .stopOnFailure
+        failureMode: FailureMode = .stopOnFailure,
+        observer: any CartStoreMigrationObserver = CartLoggerMigrationObserver()
     ) {
         self.stateStore = stateStore
         self.policy = policy
         self.failureMode = failureMode
+        self.observer = observer
     }
     
     /// Runs the provided migrators in order.
@@ -54,9 +57,15 @@ struct CartStoreMigrationRunner: Sendable {
             }
             
             do {
-                try await migrator.migrate()
-                await stateStore.markCompleted(migrator.id)
+                await observer.migrationStarted(id: migrator.id)
+                let result = try await migrator.migrate()
+                await observer.migrationSucceeded(id: migrator.id, result: result)
+
+                if result.shouldMarkCompleted {
+                    await stateStore.markCompleted(migrator.id)
+                }
             } catch {
+                await observer.migrationFailed(id: migrator.id, error: error)
                 switch failureMode {
                 case .stopOnFailure:
                     throw error

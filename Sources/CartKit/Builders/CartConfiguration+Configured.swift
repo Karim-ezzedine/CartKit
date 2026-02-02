@@ -6,6 +6,7 @@ public extension CartConfiguration {
         storage: CartStoragePreference = .automatic,
         migrationPolicy: CartStoreMigrationPolicy = .auto,
         migrationStateStore: CartStoreMigrationStateStore = UserDefaultsCartMigrationStateStore(),
+        migrationFailureStrategy: CartStoreFactory.MigrationFailureStrategy = .throwError,
         pricingEngine: CartPricingEngine = DefaultCartPricingEngine(),
         promotionEngine: PromotionEngine = DefaultPromotionEngine(),
         validationEngine: CartValidationEngine = DefaultCartValidationEngine(),
@@ -18,7 +19,9 @@ public extension CartConfiguration {
         let store = try await CartStoreFactory.makeStore(
             preference: storage,
             migrationPolicy: migrationPolicy,
-            migrationStateStore: migrationStateStore
+            migrationStateStore: migrationStateStore,
+            migrationFailureStrategy: migrationFailureStrategy,
+            migrationLogger: logger
         )
 
         return CartConfiguration(
