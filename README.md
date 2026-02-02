@@ -922,5 +922,4 @@ struct CartFlowTests {
         #expect(cartUpdateResult.cart.status == .active)
     }
 }
-
 ```
