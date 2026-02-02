@@ -6,7 +6,7 @@ import CartKitCore
 /// It operates on the `CartStore` port to avoid coupling to persistence details.
 struct CartStoreCrossBackendMigrator: CartStoreMigrator {
 
-    let id: CartMigrationID = CartMigrationID(rawValue: "car_store_cross_backend_migrator")
+    let id: CartMigrationID = CartMigrationID(rawValue: "cart_store_cross_backend_migrator")
 
     private let source: any CartStore
     private let target: any CartStore
@@ -22,19 +22,36 @@ struct CartStoreCrossBackendMigrator: CartStoreMigrator {
         self.allowWhenTargetHasData = allowWhenTargetHasData
     }
 
+    @discardableResult
     func migrate() async throws -> CartStoreMigrator.Result {
         let sourceCarts = try await source.fetchAllCarts(limit: nil)
         guard !sourceCarts.isEmpty else { return .skipped(shouldMarkCompleted: true) }
 
         if !allowWhenTargetHasData {
-            let targetPreview = try await target.fetchAllCarts(limit: 1)
-            guard targetPreview.isEmpty else { return .skipped(shouldMarkCompleted: false) }
+            // Stricter detection: verify all source carts are already in target (handles partial migrations).
+            let targetCarts = try await target.fetchAllCarts(limit: nil)
+            let sourceCartIDs = Set(sourceCarts.map(\.id))
+            let targetCartIDs = Set(targetCarts.map(\.id))
+            let sourceCartsInTarget = sourceCartIDs.intersection(targetCartIDs)
+            
+            // If target has all source carts, migration is complete (safe to skip).
+            if sourceCartIDs.isSubset(of: targetCartIDs) {
+                return .skipped(shouldMarkCompleted: true)
+            }
+            
+            // If target has carts but NONE are from source (unrelated data), skip.
+            if !targetCartIDs.isEmpty && sourceCartsInTarget.isEmpty {
+                return .skipped(shouldMarkCompleted: false)
+            }
         }
 
+        // Migrate all source carts (upsert semantics ensure idempotency).
+        var migratedCount = 0
         for cart in sourceCarts {
             try await target.saveCart(cart)
+            migratedCount += 1
         }
 
-        return .migrated(carts: sourceCarts.count)
+        return .migrated(carts: migratedCount)
     }
 }

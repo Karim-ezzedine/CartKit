@@ -539,7 +539,7 @@ storage backend changes.
 - Promotion persistence (`savedPromotionKinds`)
 - Snapshot rule fields (`minSubtotal`, `maxItemCount`)
 
-### Where migrations run (Clean Architecture)
+### Where migrations run
 
 Migrations are a **composition/infrastructure concern** and are executed during storage resolution
 in `CartStoreFactory` (via `CartConfiguration.configured(...)`) before returning a `CartStore`.
@@ -596,8 +596,16 @@ Core Data store into the SwiftData store:
 
 - **Runs only when needed**:
   - source (Core Data) has carts
-  - target (SwiftData) is empty
+  - target (SwiftData) does not contain all source carts (stricter detection)
   - migration not already completed (state store)
+- **Stricter detection**:
+  - Checks if all source carts are already in target (not just "is empty")
+  - If all source carts are present → skip (migration complete)
+  - If some source carts are present → continue (partial migration recovery)
+  - If target has unrelated carts (none from source) → skip (protect unrelated data)
+- **Partial migration recovery**:
+  - If migration crashes mid-way, re-running detects partial state and completes migration
+  - Uses upsert semantics to prevent duplicates
 - **Force behavior**:
   - `.force` allows migration even if the target already has data
 - **Idempotent**:

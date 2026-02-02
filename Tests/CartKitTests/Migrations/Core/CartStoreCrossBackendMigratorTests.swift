@@ -96,6 +96,61 @@ struct CartStoreCrossBackendMigratorTests {
         #expect(ids.contains(sourceCart.id))
         #expect(ids.contains(targetCart.id))
     }
+
+    @Test
+    func migrate_recoversFromPartialMigration() async throws {
+        guard #available(iOS 17, *) else { return }
+
+        let source = try await makeCoreDataStore()
+        let target = try makeSwiftDataStore()
+
+        let cart1 = makeCart(id: "cart-1", storeID: "store-1", profileID: nil)
+        let cart2 = makeCart(id: "cart-2", storeID: "store-1", profileID: nil)
+
+        // Simulate partial migration: cart1 migrated, cart2 not yet migrated.
+        try await source.saveCart(cart1)
+        try await source.saveCart(cart2)
+        try await target.saveCart(cart1) // Partial migration state
+
+        let migrator = CartStoreCrossBackendMigrator(source: source, target: target)
+        let result = try await migrator.migrate()
+
+        // Should complete migration (cart2 gets migrated).
+        #expect(result.cartsMigrated == 2)
+
+        let migrated = try await target.fetchAllCarts(limit: nil)
+        let ids = Set(migrated.map(\.id))
+        #expect(ids.contains(cart1.id))
+        #expect(ids.contains(cart2.id))
+        #expect(migrated.count == 2)
+    }
+
+    @Test
+    func migrate_skipsWhenAllSourceCartsAlreadyMigrated() async throws {
+        guard #available(iOS 17, *) else { return }
+
+        let source = try await makeCoreDataStore()
+        let target = try makeSwiftDataStore()
+
+        let cart1 = makeCart(id: "cart-complete-1", storeID: "store-1", profileID: nil)
+        let cart2 = makeCart(id: "cart-complete-2", storeID: "store-1", profileID: nil)
+
+        // Simulate complete migration: all carts already in target.
+        try await source.saveCart(cart1)
+        try await source.saveCart(cart2)
+        try await target.saveCart(cart1)
+        try await target.saveCart(cart2)
+
+        let migrator = CartStoreCrossBackendMigrator(source: source, target: target)
+        let result = try await migrator.migrate()
+
+        // Should skip (all carts already migrated).
+        #expect(result.status == .skipped)
+        #expect(result.shouldMarkCompleted == true)
+
+        let migrated = try await target.fetchAllCarts(limit: nil)
+        #expect(migrated.count == 2)
+    }
 }
 
 // MARK: - Helpers
