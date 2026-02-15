@@ -49,11 +49,14 @@ public actor InMemoryCartStore: CartStore {
             result = result.filter { $0.storeID == storeID }
         }
 
-        // Filter by profile (guest vs logged-in)
-        if let profileID = query.profileID {
-            result = result.filter { $0.profileID == profileID }
-        } else {
+        // Filter by profile scope.
+        switch query.profile {
+        case .any:
+            break
+        case .guestOnly:
             result = result.filter { $0.profileID == nil }
+        case .profile(let profileID):
+            result = result.filter { $0.profileID == profileID }
         }
 
         // Filter by session (3-state)

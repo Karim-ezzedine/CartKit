@@ -83,7 +83,7 @@ struct InMemoryCartStoreTests {
         // Guest query: profileID == nil
         let guestQuery = CartQuery(
             storeID: storeID,
-            profileID: nil,
+            profile: .guestOnly,
             statuses: nil,
             sort: .updatedAtDescending
         )
@@ -96,7 +96,7 @@ struct InMemoryCartStoreTests {
         // Logged-in query: profileID != nil
         let profileQuery = CartQuery(
             storeID: storeID,
-            profileID: profileID,
+            profile: .profile(profileID),
             statuses: nil,
             sort: .updatedAtDescending
         )
@@ -105,6 +105,37 @@ struct InMemoryCartStoreTests {
         
         #expect(profileResults.count == 1)
         #expect(profileResults.first?.id == profileCart.id)
+    }
+
+    @Test
+    func fetchCarts_profileAny_includesGuestAndLoggedIn() async throws {
+        let now = Date()
+
+        let storeID = CartTestFixtures.demoStoreID
+        let otherStoreID = CartTestFixtures.anotherStoreID
+        let profileID = CartTestFixtures.demoProfileID
+
+        let guestCart = CartTestFixtures.guestCart(storeID: storeID, now: now)
+        let profileCart = CartTestFixtures.loggedInCart(
+            storeID: storeID,
+            profileID: profileID,
+            now: now
+        )
+        let otherStoreCart = CartTestFixtures.guestCart(storeID: otherStoreID, now: now)
+
+        let store = makeStore(initialCarts: [guestCart, profileCart, otherStoreCart])
+
+        let query = CartQuery(
+            storeID: storeID,
+            profile: .any,
+            session: .sessionless,
+            statuses: nil,
+            sort: .updatedAtDescending
+        )
+        let results = try await store.fetchCarts(matching: query, limit: nil)
+
+        #expect(results.count == 2)
+        #expect(Set(results.map(\.id)) == Set([guestCart.id, profileCart.id]))
     }
     
     // MARK: - Fetch: statuses, sort, limit
@@ -130,7 +161,7 @@ struct InMemoryCartStoreTests {
         
         let query = CartQuery(
             storeID: storeID,
-            profileID: nil,
+            profile: .guestOnly,
             statuses: [.active],
             sort: .updatedAtDescending
         )
@@ -164,7 +195,7 @@ struct InMemoryCartStoreTests {
         
         let query = CartQuery(
             storeID: storeID,
-            profileID: nil,
+            profile: .guestOnly,
             statuses: nil,
             sort: .updatedAtDescending
         )
@@ -194,17 +225,17 @@ struct InMemoryCartStoreTests {
 
         let store = makeStore(initialCarts: [nilCart, a, b])
 
-        let qNil = CartQuery(storeID: storeID, profileID: profileID, session: .sessionless, statuses: [.active], sort: .updatedAtDescending)
+        let qNil = CartQuery(storeID: storeID, profile: .profile(profileID), session: .sessionless, statuses: [.active], sort: .updatedAtDescending)
         let rNil = try await store.fetchCarts(matching: qNil, limit: nil)
         #expect(rNil.count == 1)
         #expect(rNil.first?.sessionID == nil)
 
-        let qA = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: [.active], sort: .updatedAtDescending)
+        let qA = CartQuery(storeID: storeID, profile: .profile(profileID), session: .session(sA), statuses: [.active], sort: .updatedAtDescending)
         let rA = try await store.fetchCarts(matching: qA, limit: nil)
         #expect(rA.count == 1)
         #expect(rA.first?.sessionID == sA)
 
-        let qAny = CartQuery(storeID: storeID, profileID: profileID, session: .any, statuses: [.active], sort: .updatedAtDescending)
+        let qAny = CartQuery(storeID: storeID, profile: .profile(profileID), session: .any, statuses: [.active], sort: .updatedAtDescending)
         let rAny = try await store.fetchCarts(matching: qAny, limit: nil)
         #expect(rAny.count == 3)
     }
@@ -225,7 +256,7 @@ struct InMemoryCartStoreTests {
 
         let store = makeStore(initialCarts: [c1, c2])
 
-        let q = CartQuery(storeID: nil, profileID: profileID, session: .session(sA), statuses: [.active], sort: .updatedAtDescending)
+        let q = CartQuery(storeID: nil, profile: .profile(profileID), session: .session(sA), statuses: [.active], sort: .updatedAtDescending)
         let r = try await store.fetchCarts(matching: q, limit: nil)
 
         #expect(Set(r.map(\.storeID)) == Set([store1, store2]))
@@ -246,8 +277,8 @@ struct InMemoryCartStoreTests {
 
         let store = makeStore(initialCarts: [active, checkedOut])
 
-        let qNil = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: nil, sort: .updatedAtDescending)
-        let qEmpty = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: [], sort: .updatedAtDescending)
+        let qNil = CartQuery(storeID: storeID, profile: .profile(profileID), session: .session(sA), statuses: nil, sort: .updatedAtDescending)
+        let qEmpty = CartQuery(storeID: storeID, profile: .profile(profileID), session: .session(sA), statuses: [], sort: .updatedAtDescending)
 
         let rNil = try await store.fetchCarts(matching: qNil, limit: nil)
         let rEmpty = try await store.fetchCarts(matching: qEmpty, limit: nil)

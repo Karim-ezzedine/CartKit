@@ -1,16 +1,29 @@
-/// Parameters used to fetch carts from a CartStore.
+/// Describes filtering and sorting criteria for cart discovery queries.
 ///
-/// Semantics:
-/// - `storeID` is always required.
-/// - `profileID == nil` means "guest carts for this store".
-/// - `profileID != nil` means "carts for that profile in this store".
-/// - `sessionID == nil` means "do not filter by session".
-/// - `sessionID != nil` filters carts belonging to that session.
-/// - `statuses == nil` means "any status".
-/// - `statuses != nil` filters by the given statuses.
-/// - `sort` controls ordering of the returned array.
+/// Query semantics:
+/// - `storeID == nil` matches carts from any store.
+/// - `profile` controls guest/profile scope:
+///   - `.any` matches all carts, including guest and logged-in.
+///   - `.guestOnly` matches guest carts (`Cart.profileID == nil`).
+///   - `.profile(id)` matches carts owned by that profile.
+/// - `session` controls session scope.
+/// - `statuses == nil` (or empty) means no status filter.
+/// - `sort` controls ordering of returned carts.
 public struct CartQuery: Hashable, Codable, Sendable {
-    
+
+    /// Describes which profile ownership scope to include in query results.
+    public enum ProfileFilter: Hashable, Codable, Sendable {
+        /// Includes all carts regardless of profile ownership.
+        case any
+
+        /// Includes only guest carts (`Cart.profileID == nil`).
+        case guestOnly
+
+        /// Includes only carts belonging to the provided profile.
+        case profile(UserProfileID)
+    }
+
+    /// Describes which session scope to include in query results.
     public enum SessionFilter: Hashable, Codable, Sendable {
         /// Do not filter by session (returns carts for any session, including nil).
         case any
@@ -26,75 +39,107 @@ public struct CartQuery: Hashable, Codable, Sendable {
         case updatedAtAscending
         case updatedAtDescending
     }
-    
-    /// Optional store scope:
-    /// - nil => any store
-    /// - non-nil => only that store
+
+    /// Optional store scope.
+    ///
+    /// - `nil`: Any store.
+    /// - Non-`nil`: A single store.
     public let storeID: StoreID?
-    public let profileID: UserProfileID?
+
+    /// Profile ownership scope for this query.
+    public let profile: ProfileFilter
+
+    /// Session scope for this query.
     public let session: SessionFilter
+
+    /// Optional status scope.
+    ///
+    /// - `nil`: Any status.
+    /// - Empty set: Any status.
+    /// - Non-empty set: Only listed statuses.
     public let statuses: Set<CartStatus>?
+
+    /// Sort order for matching carts.
     public let sort: Sort
-    
+
+    /// Creates a cart query with explicit profile scope.
+    ///
+    /// - Parameters:
+    ///   - storeID: Optional store scope. Pass `nil` to match carts across stores.
+    ///   - profile: Profile ownership scope.
+    ///   - session: Session scope filter.
+    ///   - statuses: Optional status filter.
+    ///   - sort: Sort order for matching carts.
     public init(
         storeID: StoreID?,
-        profileID: UserProfileID? = nil,
+        profile: ProfileFilter,
         session: SessionFilter = .sessionless,
         statuses: Set<CartStatus>? = nil,
         sort: Sort = .updatedAtDescending
     ) {
         self.storeID = storeID
-        self.profileID = profileID
+        self.profile = profile
         self.session = session
         self.statuses = statuses
         self.sort = sort
     }
-    
-    /// Convenience for querying active carts only.
+
+    /// Creates an active-cart query for an explicit profile scope.
+    ///
+    /// - Parameters:
+    ///   - storeID: Store scope.
+    ///   - profile: Profile ownership scope.
+    ///   - sessionID: Optional session identifier. `nil` maps to `.sessionless`.
+    /// - Returns: A query filtered to `.active` carts.
     public static func active(
         storeID: StoreID,
-        profileID: UserProfileID?,
+        profile: ProfileFilter,
         sessionID: CartSessionID? = nil
     ) -> CartQuery {
         CartQuery(
             storeID: storeID,
-            profileID: profileID,
+            profile: profile,
             session: sessionID.map(SessionFilter.session) ?? .sessionless,
             statuses: [.active],
             sort: .updatedAtDescending
         )
     }
-    
-    /// discover all active carts for a profile across stores & sessions.
+
+    /// Creates an active-cart query across stores and sessions for an explicit profile scope.
+    ///
+    /// - Parameter profile: Profile ownership scope.
+    /// - Returns: A query filtered to `.active` carts across all stores and sessions.
     public static func activeAcrossStoresAndSessions(
-        profileID: UserProfileID?
+        profile: ProfileFilter
     ) -> CartQuery {
         CartQuery(
             storeID: nil,
-            profileID: profileID,
+            profile: profile,
             session: .any,
             statuses: [.active],
             sort: .updatedAtDescending
         )
     }
-    
-    /// Convenience for querying active carts across stores for a given profile + session group.
+
+    /// Creates an active-cart query across stores for an explicit profile/session scope.
     ///
-    /// - `storeID == nil` means any store.
-    /// - `sessionID == nil` means sessionless carts only
-    /// - `sessionID != nil` filters carts belonging to that session.
+    /// - Parameters:
+    ///   - profile: Profile ownership scope.
+    ///   - sessionID: Optional session identifier. `nil` maps to `.sessionless`.
+    /// - Returns: A query filtered to `.active` carts across all stores.
     public static func activeAcrossStores(
-        profileID: UserProfileID?,
+        profile: ProfileFilter,
         sessionID: CartSessionID?
     ) -> CartQuery {
         CartQuery(
             storeID: nil,
-            profileID: profileID,
+            profile: profile,
             session: sessionID.map(SessionFilter.session) ?? .sessionless,
             statuses: [.active],
             sort: .updatedAtDescending
         )
     }
+
 }
 
 /// Abstraction over the underlying cart storage.

@@ -135,91 +135,66 @@ public actor SwiftDataCartStore: CartStore {
     private func makeDescriptor(for query: CartQuery, limit: Int?) -> FetchDescriptor<CartModel> {
         
         let storeRaw: String? = query.storeID?.rawValue
-        let profileRaw: String? = query.profileID?.rawValue
-        
-        enum SessionMode {
-            case any
-            case sessionless
-            case session(String)
+        let storeRawValue = storeRaw ?? ""
+
+        let shouldFilterProfile: Bool
+        let requiresGuestProfile: Bool
+        let profileRawValue: String
+        switch query.profile {
+        case .any:
+            shouldFilterProfile = false
+            requiresGuestProfile = false
+            profileRawValue = ""
+        case .guestOnly:
+            shouldFilterProfile = true
+            requiresGuestProfile = true
+            profileRawValue = ""
+        case .profile(let profileID):
+            shouldFilterProfile = true
+            requiresGuestProfile = false
+            profileRawValue = profileID.rawValue
         }
-        
-        let sessionMode: SessionMode = {
-            switch query.session {
-            case .any: return .any
-            case .sessionless: return .sessionless
-            case .session(let id): return .session(id.rawValue)
-            }
-        }()
-        
-        let statusRaw: Set<String>? = {
-            guard let statuses = query.statuses, !statuses.isEmpty else { return nil }
-            return Set(statuses.map(\.rawValue))
-        }()
-        
+
+        let shouldFilterStatuses: Bool
+        let statusRawValues: Set<String>
+        if let statuses = query.statuses, !statuses.isEmpty {
+            shouldFilterStatuses = true
+            statusRawValues = Set(statuses.map(\.rawValue))
+        } else {
+            shouldFilterStatuses = false
+            statusRawValues = []
+        }
+
         // Helpers expressed as inline boolean expressions, not functions.
-        // We materialize the store/session constraints as flags and raw values.
+        // We materialize scope constraints as flags and raw values.
         let shouldFilterStore = (storeRaw != nil)
-        
+
         let shouldFilterSession: Bool
         let sessionRaw: String?
-        switch sessionMode {
+        switch query.session {
         case .any:
             shouldFilterSession = false
             sessionRaw = nil
         case .sessionless:
             shouldFilterSession = true
             sessionRaw = nil
-        case .session(let raw):
+        case .session(let id):
             shouldFilterSession = true
-            sessionRaw = raw
+            sessionRaw = id.rawValue
         }
-        
-        let descriptor: FetchDescriptor<CartModel>
-        
-        if let statusRaw {
-            if let profileRaw {
-                descriptor = FetchDescriptor<CartModel>(
-                    predicate: #Predicate<CartModel> { cart in
-                        // Store (optional)
-                        (!shouldFilterStore || cart.storeId == storeRaw!) &&
-                        // Profile (logged in)
-                        cart.profileId == profileRaw &&
-                        // Session (any/sessionless/specific)
-                        (!shouldFilterSession || cart.sessionId == sessionRaw) &&
-                        // Status
-                        statusRaw.contains(cart.status)
-                    }
-                )
-            } else {
-                descriptor = FetchDescriptor<CartModel>(
-                    predicate: #Predicate<CartModel> { cart in
-                        (!shouldFilterStore || cart.storeId == storeRaw!) &&
-                        // Guest
-                        cart.profileId == nil &&
-                        (!shouldFilterSession || cart.sessionId == sessionRaw) &&
-                        statusRaw.contains(cart.status)
-                    }
-                )
+
+        let descriptor = FetchDescriptor<CartModel>(
+            predicate: #Predicate<CartModel> { cart in
+                (!shouldFilterStore || cart.storeId == storeRawValue) &&
+                (
+                    !shouldFilterProfile ||
+                    (requiresGuestProfile && cart.profileId == nil) ||
+                    (!requiresGuestProfile && cart.profileId == profileRawValue)
+                ) &&
+                (!shouldFilterSession || cart.sessionId == sessionRaw) &&
+                (!shouldFilterStatuses || statusRawValues.contains(cart.status))
             }
-        } else {
-            if let profileRaw {
-                descriptor = FetchDescriptor<CartModel>(
-                    predicate: #Predicate<CartModel> { cart in
-                        (!shouldFilterStore || cart.storeId == storeRaw!) &&
-                        cart.profileId == profileRaw &&
-                        (!shouldFilterSession || cart.sessionId == sessionRaw)
-                    }
-                )
-            } else {
-                descriptor = FetchDescriptor<CartModel>(
-                    predicate: #Predicate<CartModel> { cart in
-                        (!shouldFilterStore || cart.storeId == storeRaw!) &&
-                        cart.profileId == nil &&
-                        (!shouldFilterSession || cart.sessionId == sessionRaw)
-                    }
-                )
-            }
-        }
+        )
         
         var mutable = descriptor
         mutable.sortBy = sortDescriptors(for: query.sort)
@@ -243,4 +218,3 @@ public actor SwiftDataCartStore: CartStore {
     }
 }
 #endif
-

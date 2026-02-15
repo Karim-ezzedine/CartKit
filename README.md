@@ -14,7 +14,7 @@ CartKit lets you manage carts per store and per user scope (guest or profile), w
 - Pluggable storage and business policies
 - Multi-store checkout via session groups
 
-> **Status:** Stable (v1.0.0)  
+> **Status:** Stable (v1.0.1)  
 > Public APIs are versioned and stable for v1.x.
 
 ---
@@ -142,6 +142,10 @@ Guest carts are local-only, not tied to a user account, and can be migrated late
 
 There is no separate “guest cart” type. Guest behavior is a semantic interpretation, not a different model.
 
+For discovery queries, guest scope is explicit:
+
+`CartQuery(profile: .guestOnly, ...)`
+
 ---
 
 ### Profile carts
@@ -202,6 +206,44 @@ _ = try await cartManager.setActiveCart(
 
 // List active groups
 let groups = try await cartManager.getActiveCartGroups(profileID: profileID)
+```
+
+### Global cart discovery queries
+
+Use `queryCarts(matching:limit:)` when you need custom cart discovery without accessing storage adapters directly.
+
+`CartQuery` now supports explicit profile scope via `profile: CartQuery.ProfileFilter`:
+
+- `.any`: include guest + all logged-in carts
+- `.guestOnly`: include guest carts only
+- `.profile(id)`: include a specific logged-in profile
+
+#### Example: dashboard discovery across all stores/profiles/sessions
+
+```swift
+let query = CartQuery(
+    storeID: nil,
+    profile: .any,
+    session: .any,
+    statuses: [.active],
+    sort: .updatedAtDescending
+)
+
+let carts = try await cartManager.queryCarts(matching: query, limit: nil)
+```
+
+#### Example: active guest carts only
+
+```swift
+let guestQuery = CartQuery(
+    storeID: StoreID("store_A"),
+    profile: .guestOnly,
+    session: .sessionless,
+    statuses: [.active],
+    sort: .updatedAtDescending
+)
+
+let guestCarts = try await cartManager.queryCarts(matching: guestQuery, limit: nil)
 ```
 
 ---

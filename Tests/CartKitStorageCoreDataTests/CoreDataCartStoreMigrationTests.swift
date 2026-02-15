@@ -72,7 +72,7 @@ struct CoreDataCartStoreMigrationTests {
         // Fixture-specific query: legacy fixture uses a logged-in profile cart.
         let query = CartQuery(
             storeID: StoreID(rawValue: "store-legacy"),
-            profileID: UserProfileID(rawValue: "profile-legacy"),
+            profile: .profile(UserProfileID(rawValue: "profile-legacy")),
             session: .any,
             statuses: nil,
             sort: .updatedAtDescending

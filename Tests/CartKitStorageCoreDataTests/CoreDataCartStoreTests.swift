@@ -194,7 +194,7 @@ struct CoreDataCartStoreTests {
         // Guest scope: storeA + profileID == nil
         let guestQuery = CartQuery(
             storeID: storeA,
-            profileID: nil,
+            profile: .guestOnly,
             statuses: nil,
             sort: .updatedAtDescending
         )
@@ -208,7 +208,7 @@ struct CoreDataCartStoreTests {
         // Logged-in scope: storeA + profile1
         let userQuery = CartQuery(
             storeID: storeA,
-            profileID: profile1,
+            profile: .profile(profile1),
             statuses: nil,
             sort: .updatedAtDescending
         )
@@ -218,6 +218,35 @@ struct CoreDataCartStoreTests {
         #expect(userResults.first?.profileID == profile1)
         #expect(userResults.first?.storeID == storeA)
         #expect(userResults.first?.metadata["k"] == "userA")
+    }
+
+    @Test
+    func fetchCarts_profileAny_includesGuestAndLoggedIn() async throws {
+        let sut = try await makeSUT()
+
+        let storeA = StoreID(rawValue: "store-any-A")
+        let storeB = StoreID(rawValue: "store-any-B")
+        let profileID = UserProfileID(rawValue: "profile-any-1")
+
+        let guestA = makeCart(storeID: storeA, profileID: nil, status: .active, metadata: ["k": "guestA"])
+        let userA = makeCart(storeID: storeA, profileID: profileID, status: .active, metadata: ["k": "userA"])
+        let guestB = makeCart(storeID: storeB, profileID: nil, status: .active, metadata: ["k": "guestB"])
+
+        try await sut.saveCart(guestA)
+        try await sut.saveCart(userA)
+        try await sut.saveCart(guestB)
+
+        let query = CartQuery(
+            storeID: storeA,
+            profile: .any,
+            session: .sessionless,
+            statuses: nil,
+            sort: .updatedAtDescending
+        )
+        let results = try await sut.fetchCarts(matching: query, limit: nil)
+
+        #expect(results.count == 2)
+        #expect(Set(results.map(\.id)) == Set([guestA.id, userA.id]))
     }
     
     @Test
@@ -246,7 +275,7 @@ struct CoreDataCartStoreTests {
         
         let q = CartQuery(
             storeID: storeID,
-            profileID: profileID,
+            profile: .profile(profileID),
             statuses: [.active],
             sort: .updatedAtDescending
         )
@@ -289,7 +318,7 @@ struct CoreDataCartStoreTests {
             )
         )
         
-        let q = CartQuery(storeID: storeID, profileID: nil, statuses: nil, sort: .updatedAtDescending)
+        let q = CartQuery(storeID: storeID, profile: .guestOnly, statuses: nil, sort: .updatedAtDescending)
         let results = try await sut.fetchCarts(matching: q, limit: 2)
         
         #expect(results.count == 2)
@@ -316,7 +345,7 @@ struct CoreDataCartStoreTests {
         // sessionless only
         let qNil = CartQuery(
             storeID: storeID,
-            profileID: profileID,
+            profile: .profile(profileID),
             session: .sessionless,
             statuses: [.active],
             sort: .updatedAtDescending
@@ -328,7 +357,7 @@ struct CoreDataCartStoreTests {
         // session A only
         let qA = CartQuery(
             storeID: storeID,
-            profileID: profileID,
+            profile: .profile(profileID),
             session: .session(sA),
             statuses: [.active],
             sort: .updatedAtDescending
@@ -340,7 +369,7 @@ struct CoreDataCartStoreTests {
         // any session (nil + A + B)
         let qAny = CartQuery(
             storeID: storeID,
-            profileID: profileID,
+            profile: .profile(profileID),
             session: .any,
             statuses: [.active],
             sort: .updatedAtDescending
@@ -367,7 +396,7 @@ struct CoreDataCartStoreTests {
 
         let q = CartQuery(
             storeID: nil,                      // IMPORTANT
-            profileID: profileID,
+            profile: .profile(profileID),
             session: .session(sA),
             statuses: [.active],
             sort: .updatedAtDescending
@@ -391,8 +420,8 @@ struct CoreDataCartStoreTests {
         try await sut.saveCart(active)
         try await sut.saveCart(checkedOut)
 
-        let qNil = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: nil, sort: .updatedAtDescending)
-        let qEmpty = CartQuery(storeID: storeID, profileID: profileID, session: .session(sA), statuses: [], sort: .updatedAtDescending)
+        let qNil = CartQuery(storeID: storeID, profile: .profile(profileID), session: .session(sA), statuses: nil, sort: .updatedAtDescending)
+        let qEmpty = CartQuery(storeID: storeID, profile: .profile(profileID), session: .session(sA), statuses: [], sort: .updatedAtDescending)
 
         let rNil = try await sut.fetchCarts(matching: qNil, limit: nil)
         let rEmpty = try await sut.fetchCarts(matching: qEmpty, limit: nil)

@@ -7,6 +7,20 @@ public extension CartManager {
     func getCart(id: CartID) async throws -> Cart? {
         try await config.cartStore.loadCart(id: id)
     }
+
+    /// Returns carts matching a query without exposing storage adapters to callers.
+    ///
+    /// - Parameters:
+    ///   - query: Scope, status, and sort criteria.
+    ///   - limit: Optional maximum number of carts to return. `nil` means no limit.
+    /// - Returns: Carts that match the provided query.
+    /// - Throws: Any error thrown by the underlying `CartStore`.
+    func queryCarts(
+        matching query: CartQuery,
+        limit: Int? = nil
+    ) async throws -> [Cart] {
+        try await config.cartStore.fetchCarts(matching: query, limit: limit)
+    }
     
     /// Ensures there is a single active cart for the given scope.
     ///
@@ -65,7 +79,9 @@ public extension CartManager {
     func getActiveCartGroups(
         profileID: UserProfileID? = nil
     ) async throws -> [ActiveCartGroup] {
-        let query = CartQuery.activeAcrossStoresAndSessions(profileID: profileID)
+        let query = CartQuery.activeAcrossStoresAndSessions(
+            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly
+        )
         let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
 
         let grouped = Dictionary(grouping: carts, by: \.sessionID)
@@ -90,7 +106,11 @@ public extension CartManager {
         profileID: UserProfileID? = nil,
         sessionID: CartSessionID? = nil
     ) async throws -> Cart? {
-        let query = CartQuery.active(storeID: storeID, profileID: profileID, sessionID: sessionID)
+        let query = CartQuery.active(
+            storeID: storeID,
+            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
+            sessionID: sessionID
+        )
         let carts = try await config.cartStore.fetchCarts(
             matching: query,
             limit: 1

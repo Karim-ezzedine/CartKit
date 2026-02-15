@@ -61,7 +61,7 @@ extension CoreDataCartStore: CartStore {
     ///
     /// Supported filters:
     /// - store scope (`storeId`)
-    /// - profile scope (`profileId`, including guest scope when `nil`)
+    /// - profile scope (`profileId`, including any/guest/specific profile filters)
     /// - optional status set (`status IN ...`)
     ///
     /// Sorting and limiting are applied at the Core Data request level.
@@ -76,11 +76,14 @@ extension CoreDataCartStore: CartStore {
                 predicates.append(NSPredicate(format: "storeId == %@", storeID.rawValue))
             }
 
-            // Scope: profile (guest vs logged-in)
-            if let profileID = query.profileID {
-                predicates.append(NSPredicate(format: "profileId == %@", profileID.rawValue))
-            } else {
+            // Scope: profile.
+            switch query.profile {
+            case .any:
+                break
+            case .guestOnly:
                 predicates.append(NSPredicate(format: "profileId == nil"))
+            case .profile(let profileID):
+                predicates.append(NSPredicate(format: "profileId == %@", profileID.rawValue))
             }
 
             // Scope: session (3-state)

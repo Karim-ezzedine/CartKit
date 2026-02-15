@@ -183,4 +183,74 @@ extension CartManagerDomainTests {
         #expect(groups.first?.sessionID == sA)
         #expect(groups.first?.carts.count == 2)
     }
+
+    @Test
+    func queryCarts_filtersByProfileScopeAndStatuses() async throws {
+        let storeID = StoreID("store_query")
+        let otherStoreID = StoreID("store_other_query")
+        let profileA = UserProfileID("profile_query_A")
+        let profileB = UserProfileID("profile_query_B")
+
+        var guest = CartTestFixtures.guestCart(storeID: storeID)
+        guest.status = .active
+
+        var profileActive = CartTestFixtures.loggedInCart(storeID: storeID, profileID: profileA)
+        profileActive.status = .active
+
+        var profileCheckedOut = CartTestFixtures.loggedInCart(storeID: storeID, profileID: profileB)
+        profileCheckedOut.status = .checkedOut
+
+        var otherStoreGuest = CartTestFixtures.guestCart(storeID: otherStoreID)
+        otherStoreGuest.status = .active
+
+        let (manager, _) = makeSUT(initialCarts: [guest, profileActive, profileCheckedOut, otherStoreGuest])
+
+        let anyProfileResults = try await manager.queryCarts(
+            matching: CartQuery(
+                storeID: storeID,
+                profile: .any,
+                session: .sessionless,
+                statuses: nil,
+                sort: .updatedAtDescending
+            )
+        )
+        #expect(anyProfileResults.count == 3)
+        #expect(Set(anyProfileResults.map(\.id)) == Set([guest.id, profileActive.id, profileCheckedOut.id]))
+
+        let guestOnlyResults = try await manager.queryCarts(
+            matching: CartQuery(
+                storeID: storeID,
+                profile: .guestOnly,
+                session: .sessionless,
+                statuses: nil,
+                sort: .updatedAtDescending
+            )
+        )
+        #expect(guestOnlyResults.count == 1)
+        #expect(guestOnlyResults.first?.id == guest.id)
+
+        let specificProfileResults = try await manager.queryCarts(
+            matching: CartQuery(
+                storeID: storeID,
+                profile: .profile(profileA),
+                session: .sessionless,
+                statuses: nil,
+                sort: .updatedAtDescending
+            )
+        )
+        #expect(specificProfileResults.count == 1)
+        #expect(specificProfileResults.first?.id == profileActive.id)
+
+        let statusResults = try await manager.queryCarts(
+            matching: CartQuery(
+                storeID: storeID,
+                profile: .any,
+                session: .sessionless,
+                statuses: [.checkedOut],
+                sort: .updatedAtDescending
+            )
+        )
+        #expect(statusResults.count == 1)
+        #expect(statusResults.first?.id == profileCheckedOut.id)
+    }
 }

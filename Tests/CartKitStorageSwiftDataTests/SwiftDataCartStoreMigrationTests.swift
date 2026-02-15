@@ -75,7 +75,7 @@ struct SwiftDataCartStoreMigrationTests {
         
         let query = CartQuery(
             storeID: nil,
-            profileID: nil,
+            profile: .guestOnly,
             session: .any,
             statuses: nil,
             sort: .updatedAtDescending

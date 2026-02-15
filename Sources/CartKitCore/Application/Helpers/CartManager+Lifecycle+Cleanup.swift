@@ -43,7 +43,7 @@ public extension CartManager {
         let all = try await config.cartStore.fetchCarts(
             matching: CartQuery(
                 storeID: storeID,
-                profileID: profileID,
+                profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
                 session: sessionFilter,
                 statuses: nil,
                 sort: .updatedAtDescending
@@ -92,7 +92,7 @@ public extension CartManager {
         let all = try await config.cartStore.fetchCarts(
             matching: CartQuery(
                 storeID: nil, // any store
-                profileID: profileID,
+                profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
                 session: sessionFilter,
                 statuses: nil,
                 sort: .updatedAtDescending

@@ -116,7 +116,10 @@ public extension CartManager {
         includeEmptyCarts: Bool = false
     ) async throws -> CheckoutTotals {
         
-        let query = CartQuery.activeAcrossStores(profileID: profileID, sessionID: sessionID)
+        let query = CartQuery.activeAcrossStores(
+            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
+            sessionID: sessionID
+        )
         let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
         let eligible = includeEmptyCarts ? carts : carts.filter { !$0.items.isEmpty }
         
@@ -189,7 +192,10 @@ public extension CartManager {
         includeEmptyCarts: Bool = false
     ) async throws -> CheckoutGroupValidationResult {
         
-        let query = CartQuery.activeAcrossStores(profileID: profileID, sessionID: sessionID)
+        let query = CartQuery.activeAcrossStores(
+            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
+            sessionID: sessionID
+        )
         let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
         
         let eligible = includeEmptyCarts ? carts : carts.filter { !$0.items.isEmpty }
