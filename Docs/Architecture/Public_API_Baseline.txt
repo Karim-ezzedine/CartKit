@@ -32,25 +32,25 @@ Sources/CartKitCore/Domain/Entities/Cart.swift:47: public var maxItemCount: Int?
 Sources/CartKitCore/Domain/Entities/Cart.swift:52: public var savedPromotionKinds: [PromotionKind]
 Sources/CartKitCore/Domain/Entities/Cart.swift:56: public init(
 Sources/CartKitCore/Domain/Entities/Cart.swift:93: public var isGuestCart: Bool {
-Sources/CartKitStorageSwiftData/Store/SwiftDataCartStore.swift:8:public actor SwiftDataCartStore: CartStore {
+Sources/CartKitStorageSwiftData/Store/SwiftDataCartStore.swift:8:public actor SwiftDataCartStore: CartStore, CartStoreSnapshotReadable {
 Sources/CartKitStorageSwiftData/Store/SwiftDataCartStore.swift:16: public init(configuration: SwiftDataCartStoreConfiguration = .init()) throws {
 Sources/CartKitStorageSwiftData/Store/SwiftDataCartStore.swift:37: public func loadCart(id: CartID) async throws -> Cart? {
 Sources/CartKitStorageSwiftData/Store/SwiftDataCartStore.swift:49: public func saveCart(_ cart: Cart) async throws {
 Sources/CartKitStorageSwiftData/Store/SwiftDataCartStore.swift:66: public func deleteCart(id: CartID) async throws {
 Sources/CartKitStorageSwiftData/Store/SwiftDataCartStore.swift:78: public func fetchCarts(matching query: CartQuery, limit: Int?) async throws -> [Cart] {
-Sources/CartKitStorageSwiftData/Store/SwiftDataCartStore.swift:87: public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
+Sources/CartKitStorageSwiftData/Store/SwiftDataCartStore.swift:91: public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
 Sources/CartKitStorageCoreData/CartStore/CoreDataCartStore+CartStore.swift:19: public func loadCart(id: CartID) async throws -> Cart? {
 Sources/CartKitStorageCoreData/CartStore/CoreDataCartStore+CartStore.swift:34: public func saveCart(_ cart: Cart) async throws {
 Sources/CartKitStorageCoreData/CartStore/CoreDataCartStore+CartStore.swift:48: public func deleteCart(id: CartID) async throws {
 Sources/CartKitStorageCoreData/CartStore/CoreDataCartStore+CartStore.swift:68: public func fetchCarts(matching query: CartQuery, limit: Int?) async throws -> [Cart] {
-Sources/CartKitStorageCoreData/CartStore/CoreDataCartStore+CartStore.swift:120: public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
-Sources/CartKitTestingSupport/InMemoryCartStore.swift:11:public actor InMemoryCartStore: CartStore {
+Sources/CartKitStorageCoreData/CartStore/CoreDataCartStore+CartStore.swift:124: public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
+Sources/CartKitTestingSupport/InMemoryCartStore.swift:11:public actor InMemoryCartStore: CartStore, CartStoreSnapshotReadable {
 Sources/CartKitTestingSupport/InMemoryCartStore.swift:20: public init(initialCarts: [Cart] = []) {
 Sources/CartKitTestingSupport/InMemoryCartStore.swift:28: public func loadCart(id: CartID) async throws -> Cart? {
 Sources/CartKitTestingSupport/InMemoryCartStore.swift:32: public func saveCart(_ cart: Cart) async throws {
 Sources/CartKitTestingSupport/InMemoryCartStore.swift:36: public func deleteCart(id: CartID) async throws {
 Sources/CartKitTestingSupport/InMemoryCartStore.swift:40: public func fetchCarts(
-Sources/CartKitTestingSupport/InMemoryCartStore.swift:99: public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
+Sources/CartKitTestingSupport/InMemoryCartStore.swift:103: public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
 Sources/CartKitStorageCoreData/CoreDataModel/CDCartItem+CoreDataClass.swift:4:public typealias CDCartItemCoreDataClassSet = NSSet
 Sources/CartKitStorageCoreData/CoreDataModel/CDCartItem+CoreDataClass.swift:7:public class CDCartItem: NSManagedObject {
 Sources/CartKitStorageCoreData/Persistence/CoreDataCartStoreConfiguration.swift:4:public struct CoreDataCartStoreConfiguration: Sendable {
@@ -110,6 +110,7 @@ Sources/CartKitCore/Domain/Ports/CartStore.swift:60: public let statuses: Set<Ca
 Sources/CartKitCore/Domain/Ports/CartStore.swift:63: public let sort: Sort
 Sources/CartKitCore/Domain/Ports/CartStore.swift:73: public init(
 Sources/CartKitCore/Domain/Ports/CartStore.swift:154:public protocol CartStore: Sendable {
+Sources/CartKitCore/Domain/Ports/CartStore.swift:187:public protocol CartStoreSnapshotReadable: Sendable {
 Sources/CartKitTestingSupport/TestDoubles/StubValidationEngine.swift:3:public actor StubValidationEngine: CartValidationEngine {
 Sources/CartKitTestingSupport/TestDoubles/StubValidationEngine.swift:6: public init(resultsByStore: [StoreID: CartValidationResult]) {
 Sources/CartKitTestingSupport/TestDoubles/StubValidationEngine.swift:10: public func validate(cart: Cart) async -> CartValidationResult {

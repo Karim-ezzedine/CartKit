@@ -131,6 +131,7 @@ private extension CartStoreFactory {
         guard preference != .coreData else { return [] }
         guard #available(iOS 17, *) else { return [] }
         guard targetStore is SwiftDataCartStore else { return [] }
+        guard let migrationTarget = targetStore as? any CartStore & CartStoreSnapshotReadable else { return [] }
 
         do {
             let source = try await CoreDataCartStore()
@@ -138,7 +139,7 @@ private extension CartStoreFactory {
             return [
                 CartStoreCrossBackendMigrator(
                     source: source,
-                    target: targetStore,
+                    target: migrationTarget,
                     allowWhenTargetHasData: allowWhenTargetHasData
                 )
             ]

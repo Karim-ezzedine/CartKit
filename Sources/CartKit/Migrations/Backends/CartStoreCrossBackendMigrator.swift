@@ -1,20 +1,21 @@
 import CartKitCore
 
-/// Migrates carts across persistence backends via the `CartStore` port.
+/// Migrates carts across persistence backends via migration-specific ports.
 ///
 /// - note: This is a composition/infrastructure concern (not domain).
-/// It operates on the `CartStore` port to avoid coupling to persistence details.
+/// It uses `CartStoreSnapshotReadable` for snapshots and `CartStore`
+/// for upsert behavior on the target side.
 struct CartStoreCrossBackendMigrator: CartStoreMigrator {
 
     let id: CartMigrationID = CartMigrationID(rawValue: "cart_store_cross_backend_migrator")
 
-    private let source: any CartStore
-    private let target: any CartStore
+    private let source: any CartStoreSnapshotReadable
+    private let target: any CartStore & CartStoreSnapshotReadable
     private let allowWhenTargetHasData: Bool
 
     init(
-        source: any CartStore,
-        target: any CartStore,
+        source: any CartStoreSnapshotReadable,
+        target: any CartStore & CartStoreSnapshotReadable,
         allowWhenTargetHasData: Bool = false
     ) {
         self.source = source

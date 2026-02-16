@@ -14,7 +14,7 @@ trap 'rm -f "$TMP_FILE"' EXIT
   echo "# Signature lines are extracted from public declarations in Sources/*.swift"
   echo "# Regenerate with: ./scripts/generate_public_api_baseline.sh"
   echo
-  rg --glob '*.swift' --no-heading --line-number "^\\s*public\\s+(actor|class|struct|enum|protocol|typealias|init|func|var|let|subscript)\\b" "$ROOT_DIR/Sources" \
+  rg --glob '*.swift' --sort path --no-heading --line-number "^\\s*public\\s+(actor|class|struct|enum|protocol|typealias|init|func|var|let|subscript)\\b" "$ROOT_DIR/Sources" \
     | sed "s|$ROOT_DIR/||" \
     | sed -E 's/[[:space:]]+/ /g'
 } > "$TMP_FILE"

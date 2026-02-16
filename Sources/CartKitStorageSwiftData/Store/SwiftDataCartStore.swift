@@ -5,7 +5,7 @@ import CartKitCore
 import SwiftData
 
 @available(iOS 17, *)
-public actor SwiftDataCartStore: CartStore {
+public actor SwiftDataCartStore: CartStore, CartStoreSnapshotReadable {
     
     // MARK: - Dependencies (Infrastructure)
     
@@ -84,6 +84,10 @@ public actor SwiftDataCartStore: CartStore {
         return try models.map(SwiftDataCartMapping.toDomain)
     }
 
+    /// Fetches every cart in the underlying SwiftData store for migration snapshots.
+    ///
+    /// - Parameter limit: Optional maximum number of carts to return. `nil` means no limit.
+    /// - Returns: All carts sorted by `updatedAt` descending.
     public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
         let context = ModelContext(container)
 

@@ -10,7 +10,7 @@ import CartKitCore
 ///
 /// Concurrency note:
 /// - All Core Data work is executed through `perform(_:)` on a dedicated background context.
-extension CoreDataCartStore: CartStore {
+extension CoreDataCartStore: CartStore, CartStoreSnapshotReadable {
     
     /// Loads a single cart by identifier.
     ///
@@ -117,6 +117,10 @@ extension CoreDataCartStore: CartStore {
         }
     }
 
+    /// Fetches every cart across all scopes for migration/snapshot scenarios.
+    ///
+    /// - Parameter limit: Optional maximum number of carts to return. `nil` means no limit.
+    /// - Returns: All carts sorted by `updatedAt` descending.
     public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
         try await perform { context in
             let request: NSFetchRequest<CDCart> = CDCart.fetchRequest()

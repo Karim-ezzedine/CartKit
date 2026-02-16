@@ -156,7 +156,7 @@ struct CartStoreCrossBackendMigratorTests {
 // MARK: - Helpers
 
 @available(iOS 17, *)
-private func makeCoreDataStore() async throws -> CartStore {
+private func makeCoreDataStore() async throws -> any CartStore & CartStoreSnapshotReadable {
     let dir = try makeTempDirectory()
     let url = dir.appendingPathComponent("CoreDataCartStore.sqlite")
     let config = CoreDataCartStoreConfiguration(modelName: "CartStorage", inMemory: false, storeURL: url)
@@ -164,7 +164,7 @@ private func makeCoreDataStore() async throws -> CartStore {
 }
 
 @available(iOS 17, *)
-private func makeSwiftDataStore() throws -> CartStore {
+private func makeSwiftDataStore() throws -> any CartStore & CartStoreSnapshotReadable {
     let dir = try makeTempDirectory()
     let url = dir.appendingPathComponent("SwiftDataCartStore.sqlite")
     let config = SwiftDataCartStoreConfiguration(inMemory: false, storeURL: url)
