@@ -79,25 +79,7 @@ public extension CartManager {
     func getActiveCartGroups(
         profileID: UserProfileID? = nil
     ) async throws -> [ActiveCartGroup] {
-        let query = CartQuery.activeAcrossStoresAndSessions(
-            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly
-        )
-        let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
-
-        let grouped = Dictionary(grouping: carts, by: \.sessionID)
-
-        // Sort groups by latest updatedAt desc (so newest session group appears first)
-        let groups = grouped.map { (sessionID, carts) in
-            ActiveCartGroup(
-                sessionID: sessionID,
-                carts: carts.sorted { $0.updatedAt > $1.updatedAt }
-            )
-        }
-        .sorted {
-            ($0.carts.first?.updatedAt ?? .distantPast) > ($1.carts.first?.updatedAt ?? .distantPast)
-        }
-
-        return groups
+        try await discoveryService.activeCartGroups(profileID: profileID)
     }
     
     /// Returns the active cart for a given scope, if any.
@@ -106,16 +88,11 @@ public extension CartManager {
         profileID: UserProfileID? = nil,
         sessionID: CartSessionID? = nil
     ) async throws -> Cart? {
-        let query = CartQuery.active(
+        try await discoveryService.activeCart(
             storeID: storeID,
-            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
+            profileID: profileID,
             sessionID: sessionID
         )
-        let carts = try await config.cartStore.fetchCarts(
-            matching: query,
-            limit: 1
-        )
-        return carts.first
     }
     
     /// Updates the status of a cart, enforcing lifecycle and validation rules.

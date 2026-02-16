@@ -15,6 +15,19 @@ public actor CartManager {
     // MARK: - Dependencies
     
     let config: CartConfiguration
+
+    /// Discovery collaborator for read/query use cases.
+    var discoveryService: CartDiscoveryService {
+        CartDiscoveryService(cartStore: config.cartStore)
+    }
+
+    /// Pricing collaborator for totals orchestration.
+    var pricingOrchestrator: CartPricingOrchestrator {
+        CartPricingOrchestrator(
+            pricingEngine: config.pricingEngine,
+            promotionEngine: config.promotionEngine
+        )
+    }
     
     // MARK: - Init
     
@@ -391,57 +404,6 @@ public actor CartManager {
         )
     }
     
-    /// Aggregates a sequence of per-cart totals into a single `CartTotals`.
-    ///
-    /// Rules:
-    /// - Sums each monetary component (`subtotal`, fees, `tax`, `grandTotal`).
-    /// - Enforces the single-currency assumption across the group.
-    /// - If there are no totals (e.g., all carts filtered out), returns a zero totals value.
-    func aggregateGroupTotals(_ totals: Dictionary<StoreID, CartTotals>.Values) throws -> CartTotals {
-        guard let first = totals.first else {
-            // No eligible carts => return zero totals in a deterministic currency.
-            // If you prefer, you can throw instead.
-            let currency = "USD"
-            return CartTotals(subtotal: .zero(currencyCode: currency))
-        }
-        
-        let currency = first.subtotal.currencyCode
-        
-        func ensureCurrency(_ money: Money) throws {
-            guard money.currencyCode == currency else {
-                throw CartError.validationFailed(reason: "Mixed currencies in checkout group.")
-            }
-        }
-        
-        var subtotal: Decimal = 0
-        var delivery: Decimal = 0
-        var service: Decimal = 0
-        var tax: Decimal = 0
-        var grand: Decimal = 0
-        
-        for t in totals {
-            try ensureCurrency(t.subtotal)
-            try ensureCurrency(t.deliveryFee)
-            try ensureCurrency(t.serviceFee)
-            try ensureCurrency(t.tax)
-            try ensureCurrency(t.grandTotal)
-            
-            subtotal += t.subtotal.amount
-            delivery += t.deliveryFee.amount
-            service += t.serviceFee.amount
-            tax += t.tax.amount
-            grand += t.grandTotal.amount
-        }
-        
-        return CartTotals(
-            subtotal: Money(amount: subtotal, currencyCode: currency),
-            deliveryFee: Money(amount: delivery, currencyCode: currency),
-            serviceFee: Money(amount: service, currencyCode: currency),
-            tax: Money(amount: tax, currencyCode: currency),
-            grandTotal: Money(amount: grand, currencyCode: currency)
-        )
-    }
-    
     /// Deletes carts by ID and emits the corresponding lifecycle events.
     ///
     /// - Returns: A deterministic `CartCleanupResult` (IDs sorted ascending).
@@ -459,31 +421,4 @@ public actor CartManager {
         return CartCleanupResult(deletedCartIDs: deleted)
     }
     
-    /// Applies promotions to already-computed cart totals, if any are provided.
-    ///
-    /// This is a small orchestration helper:
-    /// - If `promotions` is `nil`, the input `cartTotals` are returned unchanged.
-    /// - If `promotions` is non-`nil`, the call is delegated to the configured
-    ///   `PromotionEngine.applyPromotions(_:,to:)`.
-    ///
-    /// This keeps `CartManager` responsible for the flow (pricing → promotions)
-    /// while `PromotionEngine` encapsulates the promotion math.
-    ///
-    /// - Parameters:
-    ///   - promotions: Optional map of promotion kinds to applied promotions.
-    ///   - cartTotals: Base totals computed by the `CartPricingEngine`.
-    /// - Returns: Final `CartTotals` after applying promotions, or the original
-    ///            totals when no promotions are provided.
-    /// - Throws: Any error thrown by the configured `PromotionEngine`.
-    func applyPromotionsIfAvailable(
-        _ promotions: [PromotionKind]? = nil,
-        to cartTotals: CartTotals
-    ) async throws -> CartTotals {
-        if let promotions = promotions {
-            return try await config.promotionEngine.applyPromotions(promotions, to: cartTotals)
-        }
-        else {
-            return cartTotals
-        }
-    }
 }

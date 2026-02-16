@@ -39,15 +39,13 @@ public extension CartManager {
         
         let sessionFilter: CartQuery.SessionFilter =
         sessionID.map { .session($0) } ?? .sessionless
-        
-        let all = try await config.cartStore.fetchCarts(
-            matching: CartQuery(
-                storeID: storeID,
-                profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
-                session: sessionFilter,
-                statuses: nil,
-                sort: .updatedAtDescending
-            ),
+
+        let all = try await discoveryService.carts(
+            storeID: storeID,
+            profileID: profileID,
+            session: sessionFilter,
+            statuses: nil,
+            sort: .updatedAtDescending,
             limit: nil
         )
         
@@ -88,15 +86,13 @@ public extension CartManager {
         
         let sessionFilter: CartQuery.SessionFilter =
         sessionID.map { .session($0) } ?? .sessionless
-        
-        let all = try await config.cartStore.fetchCarts(
-            matching: CartQuery(
-                storeID: nil, // any store
-                profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
-                session: sessionFilter,
-                statuses: nil,
-                sort: .updatedAtDescending
-            ),
+
+        let all = try await discoveryService.carts(
+            storeID: nil,
+            profileID: profileID,
+            session: sessionFilter,
+            statuses: nil,
+            sort: .updatedAtDescending,
             limit: nil
         )
         
