@@ -89,22 +89,25 @@ public extension CartManager {
         requestsByStore: [StoreID: PricingRequest] = [:],
         includeEmptyCarts: Bool = false
     ) async throws -> CheckoutTotals {
-        let carts = try await discoveryService.activeCartsAcrossStores(
+        let eligible = try await eligibleActiveGroupCarts(
             profileID: profileID,
-            sessionID: sessionID
+            sessionID: sessionID,
+            includeEmptyCarts: includeEmptyCarts
         )
-        let eligible = includeEmptyCarts ? carts : carts.filter { !$0.items.isEmpty }
+
+        if let duplicatedStore = activeCartGroupPolicy
+            .duplicateStoreIDs(in: eligible)
+            .sorted(by: { $0.rawValue < $1.rawValue })
+            .first {
+            throw CartError.conflict(
+                reason: "Multiple active carts found for store=\(duplicatedStore.rawValue) in the same session group."
+            )
+        }
 
         var perStore: [StoreID: CartTotals] = [:]
         perStore.reserveCapacity(eligible.count)
 
         for cart in eligible {
-            if perStore[cart.storeID] != nil {
-                throw CartError.conflict(
-                    reason: "Multiple active carts found for store=\(cart.storeID.rawValue) in the same session group."
-                )
-            }
-
             let request = requestsByStore[cart.storeID] ?? .init()
 
             perStore[cart.storeID] = try await pricingOrchestrator.totals(for: cart, request: request)
@@ -150,18 +153,18 @@ public extension CartManager {
         sessionID: CartSessionID?,
         includeEmptyCarts: Bool = false
     ) async throws -> CheckoutGroupValidationResult {
-        let carts = try await discoveryService.activeCartsAcrossStores(
+        let eligible = try await eligibleActiveGroupCarts(
             profileID: profileID,
-            sessionID: sessionID
+            sessionID: sessionID,
+            includeEmptyCarts: includeEmptyCarts
         )
-        let eligible = includeEmptyCarts ? carts : carts.filter { !$0.items.isEmpty }
+        let duplicateStoreIDs = activeCartGroupPolicy.duplicateStoreIDs(in: eligible)
 
         var perStore: [StoreID: CartValidationResult] = [:]
         perStore.reserveCapacity(eligible.count)
 
         for cart in eligible {
-            if perStore[cart.storeID] != nil {
-                // Same uniqueness guard as totals (keeps behavior consistent)
+            if duplicateStoreIDs.contains(cart.storeID) {
                 perStore[cart.storeID] = .invalid(
                     error: .custom(message: "Multiple active carts found for the same store in one group.")
                 )
@@ -176,6 +179,29 @@ public extension CartManager {
             profileID: profileID,
             sessionID: sessionID,
             perStore: perStore
+        )
+    }
+
+    /// Returns active carts for a `(profileID, sessionID)` group after eligibility filtering.
+    ///
+    /// - Parameters:
+    ///   - profileID: Optional profile scope; `nil` means guest.
+    ///   - sessionID: Optional session scope.
+    ///   - includeEmptyCarts: Whether carts with no items are kept.
+    /// - Returns: Eligible active carts across stores for the group.
+    /// - Throws: Any error thrown by the underlying cart discovery fetch.
+    private func eligibleActiveGroupCarts(
+        profileID: UserProfileID?,
+        sessionID: CartSessionID?,
+        includeEmptyCarts: Bool
+    ) async throws -> [Cart] {
+        let carts = try await discoveryService.activeCartsAcrossStores(
+            profileID: profileID,
+            sessionID: sessionID
+        )
+        return activeCartGroupPolicy.eligibleCarts(
+            from: carts,
+            includeEmptyCarts: includeEmptyCarts
         )
     }
     

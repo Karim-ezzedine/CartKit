@@ -112,7 +112,7 @@ public extension CartManager {
         for cartID: CartID,
         to newStatus: CartStatus
     ) async throws -> Cart {
-        var cart = try await loadCartForStatusChange(id: cartID)
+        var cart = try await loadCartOrThrow(cartID)
         
         let oldStatus = cart.status
         try ensureValidStatusTransition(from: oldStatus, to: newStatus)
@@ -146,7 +146,7 @@ public extension CartManager {
         // If we are moving away from `.active`, signal that there is no
         // longer an active cart for this scope. (A new one can be created
         // later via `setActiveCart`.)
-        if oldStatus == .active, newStatus != .active {
+        if oldStatus.isActive, newStatus.isArchived {
             signalActiveCartChanged(
                 storeID: updatedCart.storeID,
                 profileID: updatedCart.profileID,

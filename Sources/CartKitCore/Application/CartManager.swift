@@ -28,6 +28,11 @@ public actor CartManager {
             promotionEngine: config.promotionEngine
         )
     }
+
+    /// Domain policy for active cart-group eligibility and uniqueness rules.
+    var activeCartGroupPolicy: ActiveCartGroupPolicy {
+        ActiveCartGroupPolicy()
+    }
     
     // MARK: - Init
     
@@ -122,19 +127,10 @@ public actor CartManager {
     func loadMutableCart(for id: CartID) async throws -> Cart {
         let cart = try await loadCartOrThrow(id)
         
-        guard cart.status == .active else {
+        guard cart.status.isActive else {
             throw CartError.conflict(reason: "Cart is not active")
         }
         
-        return cart
-    }
-    
-    /// Loads a cart for status changes without enforcing `status == .active`.
-    ///
-    /// Status transitions themselves are governed by
-    /// `ensureValidStatusTransition(from:to:)`.
-    func loadCartForStatusChange(id: CartID) async throws -> Cart {
-        let cart = try await loadCartOrThrow(id)
         return cart
     }
     
@@ -196,11 +192,7 @@ public actor CartManager {
         from oldStatus: CartStatus,
         to newStatus: CartStatus
     ) throws {
-        if oldStatus == newStatus {
-            return
-        }
-        
-        if oldStatus == .active, newStatus != .active {
+        if oldStatus.canTransition(to: newStatus) {
             return
         }
         

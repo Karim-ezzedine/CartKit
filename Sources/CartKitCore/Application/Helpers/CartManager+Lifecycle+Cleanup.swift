@@ -132,7 +132,7 @@ public extension CartManager {
     ) -> Set<CartID> {
         
         // Active carts are never deleted.
-        let nonActive = carts.filter { $0.status != .active }
+        let nonActive = carts.filter { $0.status.isArchived }
         
         var toDelete = Set<CartID>()
         
