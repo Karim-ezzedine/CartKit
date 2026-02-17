@@ -100,17 +100,19 @@ jobs:
 
       - name: Select Available iOS Simulator
         run: |
+          SIMULATOR_UDID=$(xcrun simctl list devices available iOS | awk -F '[()]' '/iPhone/ {print $2; exit}')
           SIMULATOR_NAME=$(xcrun simctl list devices available iOS | awk -F ' \\(' '/iPhone/ {gsub(/^ +/, "", $1); print $1; exit}')
-          if [ -z "$SIMULATOR_NAME" ]; then
+          if [ -z "$SIMULATOR_UDID" ]; then
             echo "No available iOS simulator found."
             exit 1
           fi
+          echo "SIMULATOR_UDID=$SIMULATOR_UDID" >> "$GITHUB_ENV"
           echo "SIMULATOR_NAME=$SIMULATOR_NAME" >> "$GITHUB_ENV"
-          echo "Using simulator: $SIMULATOR_NAME"
+          echo "Using simulator: $SIMULATOR_NAME ($SIMULATOR_UDID)"
 
       - name: Run SwiftData Adapter Contract Tests (iOS)
         run: |
           xcodebuild test \
             -scheme CartKit-Package \
-            -destination "platform=iOS Simulator,name=${SIMULATOR_NAME}" \
+            -destination "id=${SIMULATOR_UDID}" \
             -only-testing:CartKitStorageSwiftDataTests/SwiftDataCartStoreTests
