@@ -14,16 +14,16 @@ CartKit lets you manage carts per store and per user scope (guest or profile), w
 - Pluggable storage and business policies
 - Multi-store checkout via session groups
 
-> **Status:** Stable (v1.0.1)  
-> Public APIs are versioned and stable for v1.x.
+> **Status:** Pre-release preparation for v2.0.0  
+> The SDK architecture update is complete; release readiness is in progress.
 
 ---
 
 ## Requirements
 
 - **iOS:** 15.0+
-- **Swift:** 5.9+
-- **Xcode:** 15+
+- **Swift:** 6.0+
+- **Xcode:** 16+
 - **SwiftData storage:** iOS 17+ (separate target guarded by availability)
 
 ---
@@ -62,7 +62,7 @@ CartKit lets you manage carts per store and per user scope (guest or profile), w
 1. **File → Add Packages…**
 2. Enter the repository URL:
    ```text
-    https://github.com/Karim-ezzedine/CartKit
+   https://github.com/Karim-ezzedine/CartKit
    ```
 ---
 
@@ -245,6 +245,28 @@ let guestQuery = CartQuery(
 
 let guestCarts = try await cartManager.queryCarts(matching: guestQuery, limit: nil)
 ```
+
+---
+
+## Migration and release notes
+
+- Migration guide (`1.0.1` -> `2.0.0`):
+  - [Docs/MigrationGuide-1.0.1-to-2.0.0.md](Docs/MigrationGuide-1.0.1-to-2.0.0.md)
+- SDK release preparation checklist (`2.0.0`):
+  - [Docs/Release/2.0.0-Release-Preparation.md](Docs/Release/2.0.0-Release-Preparation.md)
+
+---
+
+## Architecture and contribution
+
+- Architecture hotspot map:
+  - [Docs/Architecture/Architecture_Hotspots.md](Docs/Architecture/Architecture_Hotspots.md)
+- Architecture decision records:
+  - [Docs/Architecture/ADR-0001-cart-store-snapshot-boundary.md](Docs/Architecture/ADR-0001-cart-store-snapshot-boundary.md)
+  - [Docs/Architecture/ADR-0002-cart-manager-facade-and-domain-policies.md](Docs/Architecture/ADR-0002-cart-manager-facade-and-domain-policies.md)
+  - [Docs/Architecture/ADR-0003-contract-tests-and-quality-gates.md](Docs/Architecture/ADR-0003-contract-tests-and-quality-gates.md)
+- Pull request template:
+  - [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)
 
 ---
 
@@ -448,7 +470,7 @@ Task {
          case .cartDeleted(let id):
              // Remove from UI.
              break
-         case .activeCartChanged(let storeID, let profileID, let cartID):
+         case .activeCartChanged(let storeID, let profileID, let sessionID, let cartID):
              // Update "current cart" state for this scope.
              break
          }

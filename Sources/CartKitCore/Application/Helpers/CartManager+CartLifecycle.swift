@@ -79,25 +79,7 @@ public extension CartManager {
     func getActiveCartGroups(
         profileID: UserProfileID? = nil
     ) async throws -> [ActiveCartGroup] {
-        let query = CartQuery.activeAcrossStoresAndSessions(
-            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly
-        )
-        let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
-
-        let grouped = Dictionary(grouping: carts, by: \.sessionID)
-
-        // Sort groups by latest updatedAt desc (so newest session group appears first)
-        let groups = grouped.map { (sessionID, carts) in
-            ActiveCartGroup(
-                sessionID: sessionID,
-                carts: carts.sorted { $0.updatedAt > $1.updatedAt }
-            )
-        }
-        .sorted {
-            ($0.carts.first?.updatedAt ?? .distantPast) > ($1.carts.first?.updatedAt ?? .distantPast)
-        }
-
-        return groups
+        try await discoveryService.activeCartGroups(profileID: profileID)
     }
     
     /// Returns the active cart for a given scope, if any.
@@ -106,16 +88,11 @@ public extension CartManager {
         profileID: UserProfileID? = nil,
         sessionID: CartSessionID? = nil
     ) async throws -> Cart? {
-        let query = CartQuery.active(
+        try await discoveryService.activeCart(
             storeID: storeID,
-            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
+            profileID: profileID,
             sessionID: sessionID
         )
-        let carts = try await config.cartStore.fetchCarts(
-            matching: query,
-            limit: 1
-        )
-        return carts.first
     }
     
     /// Updates the status of a cart, enforcing lifecycle and validation rules.
@@ -135,25 +112,24 @@ public extension CartManager {
         for cartID: CartID,
         to newStatus: CartStatus
     ) async throws -> Cart {
-        var cart = try await loadCartForStatusChange(id: cartID)
+        var cart = try await loadCartOrThrow(cartID)
         
         let oldStatus = cart.status
-        try ensureValidStatusTransition(from: oldStatus, to: newStatus)
+        try cartStatusTransitionPolicy.validateTransition(
+            for: cart,
+            to: newStatus
+        )
         
         // If nothing changes, short-circuit.
         if oldStatus == newStatus {
             return cart
         }
         
-        // If we're checking out, enforce full-cart validation first.
-        if newStatus == .checkedOut {
-            
-            guard cart.profileID != nil else {
-                throw CartError.validationFailed(
-                    reason: "Profile ID is missing, cannot update cart status to checkedOut"
-                )
-            }
-            
+        // If required by transition policy, enforce full-cart validation first.
+        if cartStatusTransitionPolicy.requiresFullValidation(
+            from: oldStatus,
+            to: newStatus
+        ) {
             let result = await config.validationEngine.validate(cart: cart)
             switch result {
             case .valid:
@@ -169,7 +145,10 @@ public extension CartManager {
         // If we are moving away from `.active`, signal that there is no
         // longer an active cart for this scope. (A new one can be created
         // later via `setActiveCart`.)
-        if oldStatus == .active, newStatus != .active {
+        if cartStatusTransitionPolicy.shouldClearActiveCart(
+            from: oldStatus,
+            to: newStatus
+        ) {
             signalActiveCartChanged(
                 storeID: updatedCart.storeID,
                 profileID: updatedCart.profileID,
@@ -286,26 +265,27 @@ public extension CartManager {
     ) async throws -> Cart {
 
         // Find active guest cart in this scope.
-        guard let guestActive = try await getActiveCart(
+        let guestActiveCandidate = try await getActiveCart(
             storeID: storeID,
             profileID: nil,
             sessionID: sessionID
-        ) else {
-            throw CartError.conflict(
-                reason: "No active guest cart found for store \(storeID.rawValue)"
-            )
-        }
+        )
+        let guestActive = try guestCartMigrationPolicy.requireGuestActiveCart(
+            guestActiveCandidate,
+            storeID: storeID
+        )
 
         // Enforce invariant: profile must not already have an active cart in the same scope.
-        if try await getActiveCart(
+        let profileActiveCandidate = try await getActiveCart(
             storeID: storeID,
             profileID: profileID,
             sessionID: sessionID
-        ) != nil {
-            throw CartError.conflict(
-                reason: "Profile \(profileID.rawValue) already has an active cart for store \(storeID.rawValue)"
-            )
-        }
+        )
+        try guestCartMigrationPolicy.validateTargetScopeIsEmpty(
+            activeProfileCart: profileActiveCandidate,
+            storeID: storeID,
+            profileID: profileID
+        )
 
         switch strategy {
         case .move:
@@ -313,22 +293,9 @@ public extension CartManager {
             let oldStoreID = guestActive.storeID
             let oldSessionID = guestActive.sessionID   // should match sessionID input, but use the source of truth
 
-            let moved = Cart(
-                id: guestActive.id,
-                storeID: guestActive.storeID,
-                profileID: profileID,
-                sessionID: guestActive.sessionID,
-                items: guestActive.items,
-                status: .active,
-                createdAt: guestActive.createdAt,
-                updatedAt: Date(),
-                metadata: guestActive.metadata,
-                displayName: guestActive.displayName,
-                context: guestActive.context,
-                storeImageURL: guestActive.storeImageURL,
-                minSubtotal: guestActive.minSubtotal,
-                maxItemCount: guestActive.maxItemCount,
-                savedPromotionKinds: guestActive.savedPromotionKinds
+            let moved = guestCartMigrationPolicy.makeMovedCart(
+                from: guestActive,
+                to: profileID
             )
 
             let saved = try await saveCartAfterMutation(moved)

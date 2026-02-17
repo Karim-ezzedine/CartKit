@@ -178,10 +178,17 @@ public protocol CartStore: Sendable {
         matching query: CartQuery,
         limit: Int?
     ) async throws -> [Cart]
+}
 
-    /// Fetches all carts across stores/profiles/sessions.
+/// Snapshot-reading contract used by migration infrastructure.
+///
+/// This protocol is intentionally separate from `CartStore` so app-facing
+/// cart operations do not expose migration-only APIs.
+public protocol CartStoreSnapshotReadable: Sendable {
+
+    /// Fetches all carts across stores, profiles, and sessions.
     ///
-    /// - Note: Used by infrastructure migrations that need a full snapshot.
-    /// - Parameter limit: Optional maximum number of carts to return. `nil` = no limit.
+    /// - Parameter limit: Optional maximum number of carts to return. `nil` means no limit.
+    /// - Returns: A snapshot of carts ordered by adapter-defined default ordering.
     func fetchAllCarts(limit: Int?) async throws -> [Cart]
 }

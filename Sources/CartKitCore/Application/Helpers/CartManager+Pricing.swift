@@ -21,24 +21,8 @@ public extension CartManager {
         for cartID: CartID,
         request: PricingRequest = .init()
     ) async throws -> CartTotals {
-        
         let cart = try await loadCartOrThrow(cartID)
-        
-        let effectiveContext = request.context ?? .plain(
-            storeID: cart.storeID,
-            profileID: cart.profileID,
-            sessionID: cart.sessionID
-        )
-        
-        let baseTotals = try await config.pricingEngine.computeTotals(
-            for: cart,
-            context: effectiveContext
-        )
-        
-        let effectivePromotions = request.promotionOverride
-        ?? (cart.savedPromotionKinds.isEmpty ? nil : cart.savedPromotionKinds)
-        
-        return try await applyPromotionsIfAvailable(effectivePromotions, to: baseTotals)
+        return try await pricingOrchestrator.totals(for: cart, request: request)
     }
     
     /// Computes totals for the active cart in the scope described by `request.context`
@@ -63,28 +47,18 @@ public extension CartManager {
     func totalsForActiveCart(
         request: PricingRequest
     ) async throws -> CartTotals? {
-        
         guard let context = request.context else {
             throw CartError.validationFailed(reason: "PricingRequest.context is required for totalsForActiveCart")
         }
-        
-        let cart = try await getActiveCart(
+
+        let cart = try await discoveryService.activeCart(
             storeID: context.storeID,
             profileID: context.profileID,
             sessionID: context.sessionID
         )
-        
+
         guard let cart else { return nil }
-        
-        let baseTotals = try await config.pricingEngine.computeTotals(
-            for: cart,
-            context: context
-        )
-        
-        let effectivePromotions = request.promotionOverride
-        ?? (cart.savedPromotionKinds.isEmpty ? nil : cart.savedPromotionKinds)
-        
-        return try await applyPromotionsIfAvailable(effectivePromotions, to: baseTotals)
+        return try await pricingOrchestrator.totals(for: cart, request: request)
     }
     
     /// Computes totals for the active cart group identified by `(profileID, sessionID)`.
@@ -115,44 +89,32 @@ public extension CartManager {
         requestsByStore: [StoreID: PricingRequest] = [:],
         includeEmptyCarts: Bool = false
     ) async throws -> CheckoutTotals {
-        
-        let query = CartQuery.activeAcrossStores(
-            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
-            sessionID: sessionID
+        let eligible = try await eligibleActiveGroupCarts(
+            profileID: profileID,
+            sessionID: sessionID,
+            includeEmptyCarts: includeEmptyCarts
         )
-        let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
-        let eligible = includeEmptyCarts ? carts : carts.filter { !$0.items.isEmpty }
-        
+
+        if let duplicatedStore = activeCartGroupPolicy
+            .duplicateStoreIDs(in: eligible)
+            .sorted(by: { $0.rawValue < $1.rawValue })
+            .first {
+            throw CartError.conflict(
+                reason: "Multiple active carts found for store=\(duplicatedStore.rawValue) in the same session group."
+            )
+        }
+
         var perStore: [StoreID: CartTotals] = [:]
         perStore.reserveCapacity(eligible.count)
-        
+
         for cart in eligible {
-            if perStore[cart.storeID] != nil {
-                throw CartError.conflict(
-                    reason: "Multiple active carts found for store=\(cart.storeID.rawValue) in the same session group."
-                )
-            }
-            
             let request = requestsByStore[cart.storeID] ?? .init()
-            
-            let context = request.context ?? .plain(
-                storeID: cart.storeID,
-                profileID: cart.profileID,
-                sessionID: cart.sessionID
-            )
-            
-            let baseTotals = try await config.pricingEngine.computeTotals(for: cart, context: context)
-            
-            let effectivePromotions =
-            request.promotionOverride
-            ?? (cart.savedPromotionKinds.isEmpty ? nil : cart.savedPromotionKinds)
-            
-            let finalTotals = try await applyPromotionsIfAvailable(effectivePromotions, to: baseTotals)
-            perStore[cart.storeID] = finalTotals
+
+            perStore[cart.storeID] = try await pricingOrchestrator.totals(for: cart, request: request)
         }
-        
-        let aggregate = try aggregateGroupTotals(perStore.values)
-        
+
+        let aggregate = try pricingOrchestrator.aggregateGroupTotals(perStore.values)
+
         return CheckoutTotals(
             profileID: profileID,
             sessionID: sessionID,
@@ -191,35 +153,55 @@ public extension CartManager {
         sessionID: CartSessionID?,
         includeEmptyCarts: Bool = false
     ) async throws -> CheckoutGroupValidationResult {
-        
-        let query = CartQuery.activeAcrossStores(
-            profile: profileID.map(CartQuery.ProfileFilter.profile) ?? .guestOnly,
-            sessionID: sessionID
+        let eligible = try await eligibleActiveGroupCarts(
+            profileID: profileID,
+            sessionID: sessionID,
+            includeEmptyCarts: includeEmptyCarts
         )
-        let carts = try await config.cartStore.fetchCarts(matching: query, limit: nil)
-        
-        let eligible = includeEmptyCarts ? carts : carts.filter { !$0.items.isEmpty }
-        
+        let duplicateStoreIDs = activeCartGroupPolicy.duplicateStoreIDs(in: eligible)
+
         var perStore: [StoreID: CartValidationResult] = [:]
         perStore.reserveCapacity(eligible.count)
-        
+
         for cart in eligible {
-            if perStore[cart.storeID] != nil {
-                // Same uniqueness guard as totals (keeps behavior consistent)
+            if duplicateStoreIDs.contains(cart.storeID) {
                 perStore[cart.storeID] = .invalid(
                     error: .custom(message: "Multiple active carts found for the same store in one group.")
                 )
                 continue
             }
-            
+
             let result = await config.validationEngine.validate(cart: cart)
             perStore[cart.storeID] = result
         }
-        
+
         return CheckoutGroupValidationResult(
             profileID: profileID,
             sessionID: sessionID,
             perStore: perStore
+        )
+    }
+
+    /// Returns active carts for a `(profileID, sessionID)` group after eligibility filtering.
+    ///
+    /// - Parameters:
+    ///   - profileID: Optional profile scope; `nil` means guest.
+    ///   - sessionID: Optional session scope.
+    ///   - includeEmptyCarts: Whether carts with no items are kept.
+    /// - Returns: Eligible active carts across stores for the group.
+    /// - Throws: Any error thrown by the underlying cart discovery fetch.
+    private func eligibleActiveGroupCarts(
+        profileID: UserProfileID?,
+        sessionID: CartSessionID?,
+        includeEmptyCarts: Bool
+    ) async throws -> [Cart] {
+        let carts = try await discoveryService.activeCartsAcrossStores(
+            profileID: profileID,
+            sessionID: sessionID
+        )
+        return activeCartGroupPolicy.eligibleCarts(
+            from: carts,
+            includeEmptyCarts: includeEmptyCarts
         )
     }
     

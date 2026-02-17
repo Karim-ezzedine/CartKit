@@ -8,7 +8,7 @@ import CartKitCore
 ///
 /// Thread-safety is handled by making the store an `actor`, so all access
 /// to the internal storage is serialized.
-public actor InMemoryCartStore: CartStore {
+public actor InMemoryCartStore: CartStore, CartStoreSnapshotReadable {
     
     // MARK: - Storage
     
@@ -96,6 +96,10 @@ public actor InMemoryCartStore: CartStore {
         }
     }
 
+    /// Fetches every cart in storage for migration/snapshot scenarios.
+    ///
+    /// - Parameter limit: Optional maximum number of carts to return. `nil` means no limit.
+    /// - Returns: Carts sorted by most recently updated first.
     public func fetchAllCarts(limit: Int?) async throws -> [Cart] {
         let sorted = cartsByID.values.sorted { $0.updatedAt > $1.updatedAt }
 

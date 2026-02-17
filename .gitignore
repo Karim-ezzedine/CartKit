@@ -18,3 +18,5 @@ xcuserdata/
 # Credentials (if you ever put something here)
 .netrc
 
+# Local planning/review notes (not part of phase commits)
+/Plan/
