@@ -1,16 +1,35 @@
 import Testing
 import CartKitCore
 import CartKitTestingSupport
+import Foundation
 
 #if canImport(SwiftData) && os(iOS)
 import CartKitStorageSwiftData
 
 struct SwiftDataCartStoreTests {
 
-    /// Creates a fresh in-memory SwiftData store for contract checks.
+    /// Creates a fresh SwiftData store for contract checks.
+    ///
+    /// Uses a unique temporary SQLite URL per invocation to guarantee test
+    /// isolation across parallel and sequential iOS simulator runs.
     @available(iOS 17, *)
     private func makeStore() throws -> CartStore {
-        try SwiftDataCartStore(configuration: .init(inMemory: true))
+        try SwiftDataCartStore(
+            configuration: .init(
+                inMemory: false,
+                storeURL: makeUniqueStoreURL()
+            )
+        )
+    }
+
+    /// Creates a unique SQLite file URL for one test store instance.
+    ///
+    /// - Returns: A file URL under the system temporary directory.
+    @available(iOS 17, *)
+    private func makeUniqueStoreURL() -> URL {
+        FileManager.default.temporaryDirectory
+            .appendingPathComponent("SwiftDataCartStoreTests-\(UUID().uuidString)")
+            .appendingPathExtension("sqlite")
     }
 
     /// Returns the shared contract suite bound to the SwiftData adapter.
