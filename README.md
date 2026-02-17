@@ -14,7 +14,7 @@ CartKit lets you manage carts per store and per user scope (guest or profile), w
 - Pluggable storage and business policies
 - Multi-store checkout via session groups
 
-> **Status:** Released in v2.0.0  
+> **Status:** Released in v2.0.1  
 > The SDK architecture update is complete and available.
 
 ---
