@@ -32,3 +32,85 @@ jobs:
 
       - name: Build & Test (swift test)
         run: swift test --enable-code-coverage
+
+      - name: Coverage Quality Gate (line >= 80%)
+        run: |
+          TEST_BINARY=$(find .build -type f -path '*CartKitPackageTests.xctest/Contents/MacOS/CartKitPackageTests' | head -n1)
+          PROFDATA=$(find .build -type f -name default.profdata | head -n1)
+
+          if [ -z "$TEST_BINARY" ] || [ -z "$PROFDATA" ]; then
+            echo "Coverage artifacts not found."
+            exit 1
+          fi
+
+          LINE_COVERAGE=$(xcrun llvm-cov report "$TEST_BINARY" -instr-profile "$PROFDATA" | awk '/^TOTAL/ {gsub("%","",$4); print $4}')
+          echo "Line coverage: ${LINE_COVERAGE}%"
+
+          awk -v coverage="$LINE_COVERAGE" 'BEGIN { exit !(coverage >= 80.0) }' || {
+            echo "Line coverage below 80%."
+            exit 1
+          }
+
+  contract-tests:
+    name: Contract Tests (macOS)
+    runs-on: macos-14
+
+    strategy:
+      matrix:
+        xcode: [ "16.2" ]
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode ${{ matrix.xcode }}
+        run: |
+          sudo xcode-select -s /Applications/Xcode_${{ matrix.xcode }}.app || \
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Show Swift version
+        run: swift --version
+
+      - name: Run Contract and Domain Policy Gates
+        run: |
+          swift test --filter InMemoryCartStoreTests
+          swift test --filter CoreDataCartStoreTests
+          swift test --filter DomainPolicyTests
+
+  swiftdata-ios-contract-tests:
+    name: SwiftData Contract Tests (iOS)
+    runs-on: macos-14
+
+    strategy:
+      matrix:
+        xcode: [ "16.2" ]
+      fail-fast: false
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode ${{ matrix.xcode }}
+        run: |
+          sudo xcode-select -s /Applications/Xcode_${{ matrix.xcode }}.app || \
+          sudo xcode-select -s /Applications/Xcode.app
+          xcodebuild -version
+
+      - name: Select Available iOS Simulator
+        run: |
+          SIMULATOR_NAME=$(xcrun simctl list devices available iOS | awk -F ' \\(' '/iPhone/ {gsub(/^ +/, "", $1); print $1; exit}')
+          if [ -z "$SIMULATOR_NAME" ]; then
+            echo "No available iOS simulator found."
+            exit 1
+          fi
+          echo "SIMULATOR_NAME=$SIMULATOR_NAME" >> "$GITHUB_ENV"
+          echo "Using simulator: $SIMULATOR_NAME"
+
+      - name: Run SwiftData Adapter Contract Tests (iOS)
+        run: |
+          xcodebuild test \
+            -scheme CartKit-Package \
+            -destination "platform=iOS Simulator,name=${SIMULATOR_NAME}" \
+            -only-testing:CartKitStorageSwiftDataTests/SwiftDataCartStoreTests

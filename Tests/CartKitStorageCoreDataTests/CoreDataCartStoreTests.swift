@@ -75,4 +75,9 @@ struct CoreDataCartStoreTests {
     func fetchCarts_statusesNil_equalsEmptySet_noFilter() async throws {
         try await makeContractSuite().assertFetchStatusesNilEqualsEmptySet()
     }
+
+    @Test
+    func fetchCarts_scale_behavior_with_filters_sort_and_limit() async throws {
+        try await makeContractSuite().assertFetchScaleBehaviorWithFiltersSortAndLimit()
+    }
 }

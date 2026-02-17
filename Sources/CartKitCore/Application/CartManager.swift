@@ -33,6 +33,16 @@ public actor CartManager {
     var activeCartGroupPolicy: ActiveCartGroupPolicy {
         ActiveCartGroupPolicy()
     }
+
+    /// Domain policy for cart lifecycle status transitions.
+    var cartStatusTransitionPolicy: CartStatusTransitionPolicy {
+        CartStatusTransitionPolicy()
+    }
+
+    /// Domain policy for guest-to-profile migration invariants.
+    var guestCartMigrationPolicy: GuestCartMigrationPolicy {
+        GuestCartMigrationPolicy()
+    }
     
     // MARK: - Init
     
@@ -180,25 +190,6 @@ public actor CartManager {
         emit(.cartUpdated(mutableCart.id))
         return mutableCart
     }
-    
-    /// Enforces the allowed cart status transitions.
-    ///
-    /// Current rules:
-    /// - A cart in `.active` may transition to any non-active state.
-    /// - A cart may remain in its current state (no-op).
-    /// - Non-active states are terminal and cannot transition to any other
-    ///   state (including back to `.active`).
-    func ensureValidStatusTransition(
-        from oldStatus: CartStatus,
-        to newStatus: CartStatus
-    ) throws {
-        if oldStatus.canTransition(to: newStatus) {
-            return
-        }
-        
-        throw CartError.conflict(reason: "Invalid cart status transition")
-    }
-    
     
     /// Clones cart items while regenerating their identities.
     ///

@@ -66,6 +66,9 @@ let package = Package(
                 dependencies: [
                     "CartKitCore"
                 ],
+                exclude: [
+                    "Resources/CartStorage.xcdatamodeld"
+                ],
                 resources: [
                     .process("Resources/CartStorage.momd")
                 ]
@@ -112,6 +115,9 @@ let package = Package(
                     "CartKitStorageCoreData",
                     "CartKitCore",
                     "CartKitTestingSupport"
+                ],
+                exclude: [
+                    "LegacyCoreData"
                 ]
             ),
         
@@ -121,6 +127,9 @@ let package = Package(
                     "CartKitStorageSwiftData",
                     "CartKitCore",
                     "CartKitTestingSupport"
+                ],
+                exclude: [
+                    "LegacySwiftData"
                 ]
             )
     ]

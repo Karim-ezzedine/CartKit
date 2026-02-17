@@ -64,4 +64,9 @@ struct InMemoryCartStoreTests {
     func fetch_statusesNil_equalsEmptySet_noFilter() async throws {
         try await makeContractSuite().assertFetchStatusesNilEqualsEmptySet()
     }
+
+    @Test
+    func fetch_scale_behavior_with_filters_sort_and_limit() async throws {
+        try await makeContractSuite().assertFetchScaleBehaviorWithFiltersSortAndLimit()
+    }
 }

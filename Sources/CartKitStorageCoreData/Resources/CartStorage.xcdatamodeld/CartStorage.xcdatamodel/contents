@@ -29,13 +29,13 @@
         <attribute name="unitPriceAmount" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="unitPriceCurrencyCode" optional="YES" attributeType="String"/>
         <relationship name="cart" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="CDCart" inverseName="items" inverseEntity="CDCart"/>
-        <relationship name="modifiers" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="CDCartItemModifier"/>
+        <relationship name="modifiers" optional="YES" toMany="YES" deletionRule="Cascade" destinationEntity="CDCartItemModifier" inverseName="item" inverseEntity="CDCartItemModifier"/>
     </entity>
     <entity name="CDCartItemModifier" representedClassName="CDCartItemModifier" syncable="YES">
         <attribute name="id" attributeType="String"/>
         <attribute name="name" attributeType="String"/>
         <attribute name="priceDeltaAmount" attributeType="Decimal" defaultValueString="0.0"/>
         <attribute name="priceDeltaCurrencyCode" attributeType="String"/>
-        <relationship name="item" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="CDCartItem"/>
+        <relationship name="item" optional="YES" maxCount="1" deletionRule="Nullify" destinationEntity="CDCartItem" inverseName="modifiers" inverseEntity="CDCartItem"/>
     </entity>
 </model>

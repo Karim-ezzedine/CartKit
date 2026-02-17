@@ -1,7 +1,7 @@
-# CartKit Architecture Hotspots (Phase 1 Baseline)
+# CartKit Architecture Hotspots
 
 Date: 2026-02-16
-Purpose: Identify high-impact areas to monitor while refactoring toward 2.0.0.
+Purpose: Identify high-impact areas to monitor when changing core SDK behavior.
 
 ## Hotspot 1: `CartStore` Contract Breadth
 
@@ -43,9 +43,10 @@ Purpose: Identify high-impact areas to monitor while refactoring toward 2.0.0.
 - Risk during refactor:
   - Incorrect skip/run conditions, duplicate migration, or fallback behavior drift.
 
-## Guardrails for Phase Work
+## Guardrails
 
 1. Keep shared contract tests green across all adapters before merging behavior changes.
 2. Treat `CartStore` signature changes as explicit migration events.
 3. Validate event ordering and active-cart invariants in `CartManager` tests after decomposition.
 4. Update migration docs/tests with any policy or wiring changes.
+5. Keep architecture notes (`ADR-xxxx`) updated when major decisions or guardrails change.

@@ -422,6 +422,62 @@ public struct CartStoreContractSuite {
         try require(resultsNil.count == 2, "Expected both carts with no status filter.")
     }
 
+    /// Verifies query behavior remains correct under larger cart volumes.
+    ///
+    /// - Throws: `CartStoreContractError` when behavior does not match contract.
+    public func assertFetchScaleBehaviorWithFiltersSortAndLimit() async throws {
+        let store = try await makeStore()
+
+        let targetStoreID = StoreID("contract_store_scale_target")
+        let otherStoreID = StoreID("contract_store_scale_other")
+        let profileID = UserProfileID("contract_profile_scale")
+        let base = Date(timeIntervalSince1970: 50_000)
+
+        var expectedTargetActiveIDs: [CartID] = []
+
+        for index in 0..<180 {
+            let inTargetStore = index % 3 != 0
+            let isActive = index % 4 != 0
+            let isGuest = index % 2 == 0
+
+            let cart = makeCart(
+                storeID: inTargetStore ? targetStoreID : otherStoreID,
+                profileID: isGuest ? nil : profileID,
+                sessionID: index % 5 == 0 ? CartSessionID("contract_scale_session_\(index % 3)") : nil,
+                status: isActive ? .active : .checkedOut,
+                createdAt: base.addingTimeInterval(TimeInterval(index)),
+                updatedAt: base.addingTimeInterval(TimeInterval(index))
+            )
+            try await store.saveCart(cart)
+
+            if inTargetStore && isActive {
+                expectedTargetActiveIDs.append(cart.id)
+            }
+        }
+
+        let query = CartQuery(
+            storeID: targetStoreID,
+            profile: .any,
+            session: .any,
+            statuses: [.active],
+            sort: .updatedAtDescending
+        )
+
+        let results = try await store.fetchCarts(matching: query, limit: 25)
+
+        try require(results.count == 25, "Expected limited result count for scale query.")
+        try require(
+            results.allSatisfy { $0.storeID == targetStoreID && $0.status == .active },
+            "Expected scale query results to match store/status filters."
+        )
+
+        let sortedExpected = expectedTargetActiveIDs.reversed()
+        try require(
+            Array(results.map(\.id).prefix(10)) == Array(sortedExpected.prefix(10)),
+            "Expected descending updatedAt ordering for scale query."
+        )
+    }
+
     /// Simple assertion error used by contract checks.
     private enum CartStoreContractError: Error {
         case assertionFailed(String)
