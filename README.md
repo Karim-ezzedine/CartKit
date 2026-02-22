@@ -6,6 +6,10 @@ A modular, local cart SDK for iOS apps.
 
 CartKit lets you manage carts per store and per user scope (guest or profile), with pluggable storage (Core Data, SwiftData, or your own) and configurable pricing/validation/promotion/conflict-resolution engines.
 
+## Demo App
+
+- Demo repository: [CartKitDemo](https://github.com/Karim-ezzedine/CartKitDemo)
+
 **CartKit at a glance**
 - Local-first cart management (no networking)
 - Supports guest and profile carts
@@ -267,6 +271,10 @@ let guestCarts = try await cartManager.queryCarts(matching: guestQuery, limit: n
   - [Docs/Architecture/ADR-0003-contract-tests-and-quality-gates.md](Docs/Architecture/ADR-0003-contract-tests-and-quality-gates.md)
 - Pull request template:
   - [.github/PULL_REQUEST_TEMPLATE.md](.github/PULL_REQUEST_TEMPLATE.md)
+- Repository governance and rules:
+  - [CONTRIBUTING.md](CONTRIBUTING.md)
+  - [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
+  - [SECURITY.md](SECURITY.md)
 
 ---
 
